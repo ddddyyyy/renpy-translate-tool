@@ -1,0 +1,39 @@
+:root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #101113; color: #f4f1e8; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(900px, 100%); margin: auto; padding: 28px; }
+header, .row, .section-title, .settings { display: flex; align-items: center; gap: 10px; }
+header { justify-content: space-between; margin-bottom: 18px; }
+h1 { margin: 2px 0; font-size: 26px; }
+small, label { color: #aaa79f; }
+#status { color: #e2b963; }
+section { background: #1a1b1e; border: 1px solid #303136; border-radius: 12px; padding: 18px; margin: 12px 0; }
+.dialogue { min-height: 130px; }
+.section-title { justify-content: space-between; }
+input, textarea { width: 100%; border: 1px solid #3a3b40; border-radius: 8px; background: #111215; color: inherit; padding: 10px 12px; font: inherit; }
+.row input { flex: 1; width: auto; min-width: 180px; }
+.settings input { flex: 1; width: auto; min-width: 0; }
+textarea { resize: vertical; margin: 8px 0; }
+button { flex: none; border: 0; border-radius: 8px; padding: 10px 15px; background: #d9a441; color: #17120a; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: .45; cursor: wait; }
+.quiet { background: #303136; color: #eee; }
+.settings { margin: 4px 0 10px; }
+.settings input:first-child { flex: 2; }
+.settings input:last-child { max-width: 100px; }
+.display-settings { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6px 12px; margin: 12px 0; }
+.display-settings label { display: flex; justify-content: space-between; gap: 12px; min-width: 190px; }
+.display-settings output { display: inline; min-height: 0; padding: 0; color: #f4f1e8; }
+.display-settings input { padding: 0; }
+#source { font-size: 20px; white-space: pre-wrap; user-select: text; }
+output { display: block; min-height: 1.5em; padding-top: 6px; color: #aaa79f; }
+@media (max-width: 650px) { .row, .settings { flex-wrap: wrap; } main { padding: 14px; } }
+
+body.overlay { background: transparent; overflow: auto; }
+.overlay main { width: 100%; min-width: 500px; padding: 14px; }
+.overlay-panel { margin: 0; background: rgba(18, 19, 22, var(--overlay-opacity, .95)); box-shadow: 0 12px 34px #0008; }
+.overlay-panel header { margin: 0 0 8px; }
+.overlay-panel header button { padding: 4px 10px; }
+.overlay-source { margin: 8px 0 12px; font-size: 21px; user-select: text; }
+.overlay-result { min-height: 0; padding: 0 0 12px; color: #f4f1e8; font-size: 18px; white-space: pre-wrap; }
+.overlay-result:empty { display: none; }
+.overlay-help { margin-left: auto; color: #8d8b85; }

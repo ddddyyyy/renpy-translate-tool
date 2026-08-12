@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ren'Py Translate Tool",
+  "version": "0.1.0",
+  "identifier": "dev.renpy.translate",
+  "build": { "frontendDist": "../desktop" },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [
+      { "label": "main", "title": "Ren'Py Translate Tool", "width": 960, "height": 780, "minWidth": 680, "minHeight": 600 },
+      {
+        "label": "overlay",
+        "url": "overlay.html",
+        "title": "Ren'Py Translate Overlay",
+        "width": 900,
+        "height": 180,
+        "minWidth": 500,
+        "minHeight": 140,
+        "visible": false,
+        "transparent": true,
+        "decorations": false,
+        "resizable": true,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "skipTaskbar": true,
+        "shadow": false
+      }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": { "active": false, "icon": ["icons/icon.png"] }
+}

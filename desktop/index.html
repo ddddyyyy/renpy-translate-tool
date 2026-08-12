@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ren'Py Translate</title>
+  <link rel="stylesheet" href="styles.css?v=2">
+</head>
+<body>
+  <main>
+    <header>
+      <div><small>REN'PY TRANSLATE</small><h1>游戏文本助手</h1></div>
+      <span id="status">正在启动监听…</span>
+    </header>
+
+    <section>
+      <label for="game">游戏目录</label>
+      <div class="row">
+        <input id="game" placeholder="选择或粘贴 Ren'Py 游戏目录">
+        <button id="install">安装 Hook</button>
+        <button id="uninstall" class="quiet">卸载</button>
+      </div>
+      <output id="hook-result"></output>
+    </section>
+
+    <section class="dialogue">
+      <div class="section-title"><span>当前文本</span><small id="speaker"></small></div>
+      <p id="source">启动游戏后，对话会自动出现在这里。也可以选中其中的词语。</p>
+    </section>
+
+    <section>
+      <label for="selected">待翻译文本</label>
+      <textarea id="selected" rows="3"></textarea>
+      <div class="settings">
+        <input id="base-url" placeholder="API Base URL" value="https://api.openai.com/v1">
+        <input id="model" placeholder="模型名称">
+        <input id="target" value="zh-CN" aria-label="目标语言">
+      </div>
+      <div class="display-settings">
+        <label for="overlay-opacity">背景不透明度 <output id="overlay-opacity-value">95%</output></label>
+        <input id="overlay-opacity" type="range" min="40" max="100" step="5" value="95">
+      </div>
+      <div class="row actions">
+        <button id="translate">翻译</button>
+        <button id="whole" class="quiet">使用整句</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title"><label for="translation">翻译结果</label></div>
+      <textarea id="translation" rows="4"></textarea>
+      <button id="save" class="quiet">保存到单词本</button>
+    </section>
+  </main>
+  <script src="main.js"></script>
+</body>
+</html>
