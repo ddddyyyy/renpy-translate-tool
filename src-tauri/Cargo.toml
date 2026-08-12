@@ -7,5 +7,6 @@ edition = "2021"
 tauri-build = "2"
 
 [dependencies]
+keyring = "4.1"
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-global-shortcut = "2"

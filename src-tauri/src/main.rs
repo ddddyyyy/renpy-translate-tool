@@ -11,6 +11,9 @@ struct Listener(Mutex<Option<Child>>);
 struct CurrentText(Mutex<Option<String>>);
 struct OverlayMode(Mutex<String>);
 
+const KEYRING_SERVICE: &str = "dev.renpy-translate-tool";
+const KEYRING_USER: &str = "translation-api-key";
+
 fn python() -> &'static str {
     if cfg!(windows) {
         "python"
@@ -24,17 +27,60 @@ fn root() -> &'static Path {
 }
 
 fn core(args: &[&str]) -> Result<String, String> {
-    let output = Command::new(python())
+    core_with_api_key(args, None)
+}
+
+fn core_with_api_key(args: &[&str], api_key: Option<&str>) -> Result<String, String> {
+    let mut command = Command::new(python());
+    command
         .args(["-m", "renpy_translate"])
         .args(args)
-        .current_dir(root())
-        .output()
-        .map_err(|error| error.to_string())?;
+        .current_dir(root());
+    if let Some(api_key) = api_key {
+        command.env("OPENAI_API_KEY", api_key);
+    }
+    let output = command.output().map_err(|error| error.to_string())?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     if output.status.success() {
         Ok(stdout)
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+fn api_key_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|error| error.to_string())
+}
+
+fn stored_api_key() -> Result<Option<String>, String> {
+    match api_key_entry()?.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
+fn api_key_status() -> Result<bool, String> {
+    Ok(stored_api_key()?.is_some())
+}
+
+#[tauri::command]
+fn set_api_key(api_key: String) -> Result<(), String> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err("API Key cannot be empty".to_owned());
+    }
+    api_key_entry()?
+        .set_password(api_key)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn clear_api_key() -> Result<(), String> {
+    match api_key_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(error.to_string()),
     }
 }
 
@@ -55,16 +101,20 @@ fn translate_text(
     model: String,
     target: String,
 ) -> Result<String, String> {
-    core(&[
-        "translate",
-        &text,
-        "--base-url",
-        &base_url,
-        "--model",
-        &model,
-        "--target",
-        &target,
-    ])
+    let api_key = stored_api_key()?;
+    core_with_api_key(
+        &[
+            "translate",
+            &text,
+            "--base-url",
+            &base_url,
+            "--model",
+            &model,
+            "--target",
+            &target,
+        ],
+        api_key.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -112,13 +162,19 @@ fn export_saved() -> Result<String, String> {
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(std::path::PathBuf::from)
         .unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
-    let directory = if home.join("Desktop").is_dir() { home.join("Desktop") } else { home };
+    let directory = if home.join("Desktop").is_dir() {
+        home.join("Desktop")
+    } else {
+        home
+    };
     let path = (0..)
-        .map(|index| directory.join(if index == 0 {
-            "renpy-translate-wordbook.csv".to_owned()
-        } else {
-            format!("renpy-translate-wordbook-{index}.csv")
-        }))
+        .map(|index| {
+            directory.join(if index == 0 {
+                "renpy-translate-wordbook.csv".to_owned()
+            } else {
+                format!("renpy-translate-wordbook-{index}.csv")
+            })
+        })
         .find(|path| !path.exists())
         .unwrap();
     core(&["export-saved", &path.to_string_lossy()])
@@ -226,6 +282,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             install_hook,
             uninstall_hook,
+            api_key_status,
+            set_api_key,
+            clear_api_key,
             translate_text,
             lookup_word,
             save_item,
@@ -247,4 +306,17 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    #[test]
+    fn system_keyring_round_trip() {
+        let entry =
+            keyring::Entry::new(super::KEYRING_SERVICE, "translation-api-key-test").unwrap();
+        let _ = entry.delete_credential();
+        entry.set_password("test-only-secret").unwrap();
+        assert_eq!(entry.get_password().unwrap(), "test-only-secret");
+        entry.delete_credential().unwrap();
+    }
 }

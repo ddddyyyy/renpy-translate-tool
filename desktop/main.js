@@ -26,6 +26,28 @@ $("overlay-opacity").addEventListener("input", () => {
 showDisplaySettings();
 saveSettings();
 
+async function showApiKeyStatus() {
+  try {
+    $("api-key-status").textContent = await invoke("api_key_status")
+      ? "API Key 已保存到系统凭据库"
+      : "尚未保存 API Key；开发环境可使用 OPENAI_API_KEY";
+  } catch (error) {
+    $("api-key-status").textContent = `系统凭据库不可用：${error}`;
+  }
+}
+
+$("save-api-key").onclick = () => run($("save-api-key"), async () => {
+  await invoke("set_api_key", { apiKey: $("api-key").value });
+  $("api-key").value = "";
+  await showApiKeyStatus();
+});
+$("clear-api-key").onclick = () => run($("clear-api-key"), async () => {
+  await invoke("clear_api_key");
+  $("api-key").value = "";
+  await showApiKeyStatus();
+});
+showApiKeyStatus();
+
 listen("text-event", ({ payload }) => {
   current = JSON.parse(payload);
   $("speaker").textContent = current.who || (current.event === "choice" ? "选项" : "");

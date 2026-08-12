@@ -36,6 +36,12 @@
         <input id="model" placeholder="模型名称">
         <input id="target" value="zh-CN" aria-label="目标语言">
       </div>
+      <div class="row credential">
+        <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="翻译 API Key（保存到系统凭据库）">
+        <button id="save-api-key" class="quiet">保存 Key</button>
+        <button id="clear-api-key" class="quiet">清除</button>
+      </div>
+      <small id="api-key-status">正在检查 API Key…</small>
       <div class="display-settings">
         <label for="overlay-opacity">背景不透明度 <output id="overlay-opacity-value">95%</output></label>
         <input id="overlay-opacity" type="range" min="40" max="100" step="5" value="95">

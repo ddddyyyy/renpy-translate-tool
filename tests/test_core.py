@@ -15,6 +15,7 @@ class TranslationHandler(BaseHTTPRequestHandler):
         type(self).calls += 1
         length = int(self.headers["Content-Length"])
         request = json.loads(self.rfile.read(length))
+        assert self.headers["Authorization"] == "Bearer test-key"
         assert request["model"] == "test-model"
         assert request["messages"][-1]["content"] == "Hello"
         body = json.dumps({
@@ -81,6 +82,7 @@ class CoreTest(unittest.TestCase):
                 "base_url": "http://127.0.0.1:{}".format(server.server_port),
                 "model": "test-model",
                 "target_language": "zh-CN",
+                "api_key": "test-key",
             }
             self.assertEqual(translate(store, **options), ("你好", False))
             self.assertEqual(translate(store, **options), ("你好", True))
