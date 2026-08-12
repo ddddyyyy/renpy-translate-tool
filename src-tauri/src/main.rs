@@ -4,7 +4,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::Mutex,
 };
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutEvent, ShortcutState};
 
 struct Listener(Mutex<Option<Child>>);
@@ -89,14 +89,13 @@ fn resize_overlay(app: AppHandle, width: f64, height: f64) -> Result<(), String>
     if !width.is_finite() || !height.is_finite() {
         return Err("invalid overlay size".to_owned());
     }
-    app.get_webview_window("overlay")
-        .ok_or("overlay window is unavailable")?
-        .set_size(LogicalSize::new(
-            width.clamp(500.0, 2400.0),
-            height.clamp(140.0, 1400.0),
-        ))
-        .map_err(|error| error.to_string())?;
-    position_overlay(&app);
+    let window = app
+        .get_webview_window("overlay")
+        .ok_or("overlay window is unavailable")?;
+    let size = LogicalSize::new(width.clamp(500.0, 2400.0), height.clamp(140.0, 1400.0));
+    let physical_size = size.to_physical(window.scale_factor().map_err(|error| error.to_string())?);
+    window.set_size(size).map_err(|error| error.to_string())?;
+    position_overlay(&app, Some(physical_size));
     Ok(())
 }
 
@@ -237,12 +236,19 @@ fn show_overlay(app: &AppHandle, mode: &str, interactive: bool) {
     }
 }
 
-fn position_overlay(app: &AppHandle) {
+fn position_overlay(app: &AppHandle, size: Option<PhysicalSize<u32>>) {
     let Some(window) = app.get_webview_window("overlay") else {
         return;
     };
-    let (Ok(Some(monitor)), Ok(size)) = (window.primary_monitor(), window.outer_size()) else {
+    let Ok(Some(monitor)) = window.primary_monitor() else {
         return;
+    };
+    let size = match size {
+        Some(size) => size,
+        None => match window.outer_size() {
+            Ok(size) => size,
+            Err(_) => return,
+        },
     };
     let area = monitor.work_area();
     let x = area.position.x + (area.size.width.saturating_sub(size.width) / 2) as i32;
@@ -273,7 +279,7 @@ fn main() {
             });
             app.manage(Listener(Mutex::new(Some(child))));
 
-            position_overlay(app.handle());
+            position_overlay(app.handle(), None);
             let select: Shortcut = "CmdOrCtrl+Shift+Space".parse()?;
             let sentence: Shortcut = "CmdOrCtrl+Shift+Enter".parse()?;
             let select_id = select.id();
