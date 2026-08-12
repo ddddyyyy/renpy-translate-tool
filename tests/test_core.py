@@ -5,7 +5,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from renpy_translate.core import HOOK_NAME, Store, install_hook, translate, uninstall_hook
+from renpy_translate.core import HOOK_NAME, Store, install_hook, lookup_dictionary, translate, uninstall_hook
 
 
 class TranslationHandler(BaseHTTPRequestHandler):
@@ -31,6 +31,16 @@ class TranslationHandler(BaseHTTPRequestHandler):
 
 
 class CoreTest(unittest.TestCase):
+    def test_dictionary_lookup(self):
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3") as file:
+            import sqlite3
+            connection = sqlite3.connect(file.name)
+            connection.execute("CREATE TABLE dictionary (word TEXT PRIMARY KEY COLLATE NOCASE, phonetic TEXT, translation TEXT)")
+            connection.execute("INSERT INTO dictionary VALUES ('hello', 'həˈləʊ', '你好')")
+            connection.commit()
+            connection.close()
+            self.assertEqual(lookup_dictionary("Hello", file.name)["translation"], "你好")
+            self.assertIsNone(lookup_dictionary("missing", file.name))
     def test_install_and_uninstall_hook(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -72,9 +72,22 @@ async function translate(text) {
   }
 }
 
+async function lookup(text) {
+  try {
+    selected = text.trim();
+    const entry = JSON.parse(await invoke("lookup_word", { word: selected }));
+    if (!entry) return translate(selected);
+    translated = entry.translation;
+    $("result").textContent = `${entry.word}${entry.phonetic ? ` /${entry.phonetic}/` : ""}\n${entry.translation}`;
+    $("save").disabled = false;
+  } catch (error) {
+    $("result").textContent = String(error);
+  }
+}
+
 $("source").addEventListener("mouseup", () => {
   const text = getSelection().toString().trim();
-  if (text) translate(text);
+  if (text) (/^[A-Za-z'-]+$/.test(text) ? lookup(text) : translate(text));
 });
 $("translate").onclick = () => translate(selected || current.text);
 $("save").onclick = async () => {

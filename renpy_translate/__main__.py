@@ -4,7 +4,7 @@ import os
 import socket
 from pathlib import Path
 
-from .core import HOST, PORT, Store, install_hook, receive_once, translate, uninstall_hook
+from .core import HOST, PORT, Store, install_hook, lookup_dictionary, receive_once, translate, uninstall_hook
 
 
 DEFAULT_DB = Path.home() / ".renpy-translate-tool.sqlite3"
@@ -39,6 +39,8 @@ def main():
     save.add_argument("--context", default="")
     save.add_argument("--game", default="")
     commands.add_parser("saved")
+    lookup = commands.add_parser("lookup")
+    lookup.add_argument("word")
     args = parser.parse_args()
 
     if args.command == "install":
@@ -48,6 +50,10 @@ def main():
     if args.command == "uninstall":
         removed = uninstall_hook(args.game)
         print("Removed " + ", ".join(map(str, removed)) if removed else "Not installed")
+        return
+
+    if args.command == "lookup":
+        print(json.dumps(lookup_dictionary(args.word), ensure_ascii=False))
         return
 
     store = Store(args.db)

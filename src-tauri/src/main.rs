@@ -68,6 +68,11 @@ fn translate_text(
 }
 
 #[tauri::command]
+fn lookup_word(word: String) -> Result<String, String> {
+    core(&["lookup", &word])
+}
+
+#[tauri::command]
 fn save_item(
     kind: String,
     source: String,
@@ -190,6 +195,7 @@ fn main() {
             install_hook,
             uninstall_hook,
             translate_text,
+            lookup_word,
             save_item,
             close_overlay,
             current_text,

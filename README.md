@@ -13,6 +13,10 @@ The current desktop build reuses the Python core and reads the API key from
 `OPENAI_API_KEY`. It can install the hook, receive live text, translate either
 a selection or the whole sentence, and save the result.
 
+Single English words are queried offline from a bundled 38,000-entry subset
+of [ECDICT](https://github.com/skywind3000/ECDICT) (MIT license); phrases and
+sentences continue to use the configured translation API.
+
 - `Ctrl/Cmd + Shift + Space`: open the selectable in-game overlay.
 - `Ctrl/Cmd + Shift + Enter`: translate the current sentence in the overlay.
 - `Esc`: close the interactive overlay and return input to the game.

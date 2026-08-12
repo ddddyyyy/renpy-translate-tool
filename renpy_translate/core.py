@@ -13,6 +13,7 @@ PORT = 19840
 MAX_PACKET = 65_507
 HOOK_NAME = "renpy_translate_hook.rpy"
 HOOK_PATH = Path(__file__).parent.parent / "renpy_hook" / HOOK_NAME
+DICTIONARY_DB = Path(__file__).parent.parent / "assets" / "ecdict.sqlite3"
 
 
 def parse_packet(data):
@@ -192,6 +193,21 @@ class Store:
         return self.connection.execute(
             "SELECT * FROM saved_items ORDER BY id DESC"
         ).fetchall()
+
+
+def lookup_dictionary(word, path=DICTIONARY_DB):
+    word = word.strip().lower()
+    if not word or any(not (character.isalpha() or character in "'-") for character in word):
+        return None
+    connection = sqlite3.connect("file:{}?mode=ro".format(Path(path).resolve()), uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        row = connection.execute(
+            "SELECT word, phonetic, translation FROM dictionary WHERE word = ?", (word,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        connection.close()
 
 
 def translate(store, *, text, base_url, model, target_language,
