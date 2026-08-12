@@ -5,6 +5,20 @@ let current = {};
 let selected = "";
 let translated = "";
 let hideTimer;
+let resizeTimer;
+
+try {
+  const { width, height } = JSON.parse(localStorage.getItem("overlay-size")) || {};
+  if (Number(width) && Number(height)) invoke("resize_overlay", { width: Number(width), height: Number(height) }).catch(() => {});
+} catch (_) {}
+
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => localStorage.setItem("overlay-size", JSON.stringify({
+    width: window.innerWidth,
+    height: window.innerHeight
+  })), 200);
+});
 
 function displaySettings() {
   let settings = {};

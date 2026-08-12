@@ -22,6 +22,9 @@ sentences continue to use the configured translation API.
 - `Ctrl/Cmd + Shift + Enter`: translate the current sentence in the overlay.
 - `Esc`: close the interactive overlay and return input to the game.
 
+Drag any overlay edge or corner to resize it; the last size is restored on the
+next launch.
+
 ## Install the hook
 
 ```sh

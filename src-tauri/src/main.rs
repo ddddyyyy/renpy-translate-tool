@@ -4,7 +4,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::Mutex,
 };
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutEvent, ShortcutState};
 
 struct Listener(Mutex<Option<Child>>);
@@ -82,6 +82,22 @@ fn clear_api_key() -> Result<(), String> {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(error.to_string()),
     }
+}
+
+#[tauri::command]
+fn resize_overlay(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() {
+        return Err("invalid overlay size".to_owned());
+    }
+    app.get_webview_window("overlay")
+        .ok_or("overlay window is unavailable")?
+        .set_size(LogicalSize::new(
+            width.clamp(500.0, 2400.0),
+            height.clamp(140.0, 1400.0),
+        ))
+        .map_err(|error| error.to_string())?;
+    position_overlay(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -285,6 +301,7 @@ fn main() {
             api_key_status,
             set_api_key,
             clear_api_key,
+            resize_overlay,
             translate_text,
             lookup_word,
             save_item,
