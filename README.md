@@ -60,6 +60,8 @@ python3 -m renpy_translate save word "Hello" "你好" --context "Hello, world."
 python3 -m renpy_translate saved
 ```
 
+The desktop wordbook can search, edit, delete, and export saved entries as CSV.
+
 ## Uninstall
 
 ```sh

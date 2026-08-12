@@ -39,6 +39,16 @@ def main():
     save.add_argument("--context", default="")
     save.add_argument("--game", default="")
     commands.add_parser("saved")
+    saved = commands.choices["saved"]
+    saved.add_argument("--query", default="")
+    update = commands.add_parser("update-saved")
+    update.add_argument("id", type=int)
+    update.add_argument("source")
+    update.add_argument("translation")
+    delete = commands.add_parser("delete-saved")
+    delete.add_argument("id", type=int)
+    export = commands.add_parser("export-saved")
+    export.add_argument("path")
     lookup = commands.add_parser("lookup")
     lookup.add_argument("word")
     args = parser.parse_args()
@@ -76,8 +86,14 @@ def main():
                 args.kind, args.source, args.translation, args.context, args.game
             ))
         elif args.command == "saved":
-            for item in store.saved_items():
-                print(json.dumps(dict(item), ensure_ascii=False))
+            print(json.dumps([dict(item) for item in store.saved_items(args.query)], ensure_ascii=False))
+        elif args.command == "update-saved":
+            store.update_saved_item(args.id, args.source, args.translation)
+        elif args.command == "delete-saved":
+            store.delete_saved_item(args.id)
+        elif args.command == "export-saved":
+            store.export_saved_items(args.path)
+            print(args.path)
     finally:
         store.close()
 

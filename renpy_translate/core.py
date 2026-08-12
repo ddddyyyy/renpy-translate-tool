@@ -1,4 +1,5 @@
 import hashlib
+import csv
 import json
 import os
 import socket
@@ -189,10 +190,39 @@ class Store:
             )
         return cursor.lastrowid
 
-    def saved_items(self):
+    def saved_items(self, query=""):
         return self.connection.execute(
-            "SELECT * FROM saved_items ORDER BY id DESC"
+            """SELECT * FROM saved_items
+               WHERE source_text LIKE ? OR translated_text LIKE ? OR context LIKE ?
+               ORDER BY id DESC""",
+            tuple("%{}%".format(query) for _ in range(3)),
         ).fetchall()
+
+    def update_saved_item(self, item_id, source_text, translated_text):
+        if not source_text.strip() or not translated_text.strip():
+            raise ValueError("source and translation must not be empty")
+        with self.connection:
+            cursor = self.connection.execute(
+                "UPDATE saved_items SET source_text = ?, translated_text = ? WHERE id = ?",
+                (source_text, translated_text, item_id),
+            )
+        if not cursor.rowcount:
+            raise ValueError("saved item not found")
+
+    def delete_saved_item(self, item_id):
+        with self.connection:
+            cursor = self.connection.execute("DELETE FROM saved_items WHERE id = ?", (item_id,))
+        if not cursor.rowcount:
+            raise ValueError("saved item not found")
+
+    def export_saved_items(self, path):
+        with Path(path).open("x", encoding="utf-8-sig", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(("type", "source", "translation", "context", "game", "created_at"))
+            writer.writerows(
+                (row["kind"], row["source_text"], row["translated_text"], row["context"], row["game"], row["created_at"])
+                for row in self.saved_items()
+            )
 
 
 def lookup_dictionary(word, path=DICTIONARY_DB):

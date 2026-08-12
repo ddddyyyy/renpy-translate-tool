@@ -93,6 +93,38 @@ fn save_item(
 }
 
 #[tauri::command]
+fn list_saved(query: String) -> Result<String, String> {
+    core(&["saved", "--query", &query])
+}
+
+#[tauri::command]
+fn update_saved(id: i64, source: String, translation: String) -> Result<String, String> {
+    core(&["update-saved", &id.to_string(), &source, &translation])
+}
+
+#[tauri::command]
+fn delete_saved(id: i64) -> Result<String, String> {
+    core(&["delete-saved", &id.to_string()])
+}
+
+#[tauri::command]
+fn export_saved() -> Result<String, String> {
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
+    let directory = if home.join("Desktop").is_dir() { home.join("Desktop") } else { home };
+    let path = (0..)
+        .map(|index| directory.join(if index == 0 {
+            "renpy-translate-wordbook.csv".to_owned()
+        } else {
+            format!("renpy-translate-wordbook-{index}.csv")
+        }))
+        .find(|path| !path.exists())
+        .unwrap();
+    core(&["export-saved", &path.to_string_lossy()])
+}
+
+#[tauri::command]
 fn close_overlay(app: AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("overlay")
@@ -197,6 +229,10 @@ fn main() {
             translate_text,
             lookup_word,
             save_item,
+            list_saved,
+            update_saved,
+            delete_saved,
+            export_saved,
             close_overlay,
             current_text,
             current_overlay_mode

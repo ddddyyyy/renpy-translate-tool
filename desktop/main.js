@@ -66,5 +66,45 @@ $("save").onclick = () => run($("save"), async () => {
     context: current.text || "", game: current.game || ""
   });
   $("save").textContent = "已保存";
+  loadSaved();
   setTimeout(() => { $("save").textContent = "保存到单词本"; }, 1200);
 });
+
+async function loadSaved() {
+  const items = JSON.parse(await invoke("list_saved", { query: $("saved-search").value.trim() }));
+  const list = $("saved-list");
+  list.replaceChildren();
+  if (!items.length) return list.append(Object.assign(document.createElement("small"), { textContent: "暂无收藏" }));
+  for (const item of items) {
+    const row = document.createElement("article");
+    const text = document.createElement("div");
+    const source = document.createElement("strong");
+    const translation = document.createElement("span");
+    source.textContent = item.source_text;
+    translation.textContent = item.translated_text;
+    text.append(source, translation);
+    const edit = Object.assign(document.createElement("button"), { textContent: "编辑", className: "quiet" });
+    const remove = Object.assign(document.createElement("button"), { textContent: "删除", className: "quiet" });
+    edit.onclick = async () => {
+      const nextSource = prompt("原文", item.source_text);
+      if (nextSource === null) return;
+      const nextTranslation = prompt("翻译", item.translated_text);
+      if (nextTranslation === null) return;
+      await invoke("update_saved", { id: item.id, source: nextSource, translation: nextTranslation });
+      loadSaved();
+    };
+    remove.onclick = async () => {
+      if (!confirm(`删除“${item.source_text}”？`)) return;
+      await invoke("delete_saved", { id: item.id });
+      loadSaved();
+    };
+    row.append(text, edit, remove);
+    list.append(row);
+  }
+}
+
+let searchTimer;
+$("saved-search").oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadSaved, 150); };
+$("export-saved").onclick = async () => { $("saved-status").textContent = `已导出到 ${await invoke("export_saved")}`; };
+window.addEventListener("focus", loadSaved);
+loadSaved();

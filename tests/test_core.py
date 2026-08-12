@@ -88,6 +88,17 @@ class CoreTest(unittest.TestCase):
 
             item_id = store.save_item("word", "Hello", "你好", "Hello, world.")
             self.assertEqual(store.saved_items()[0]["id"], item_id)
+            self.assertEqual(len(store.saved_items("你好")), 1)
+            store.update_saved_item(item_id, "Hello!", "您好")
+            self.assertEqual(store.saved_items()[0]["source_text"], "Hello!")
+            with tempfile.TemporaryDirectory() as directory:
+                export = Path(directory) / "wordbook.csv"
+                store.export_saved_items(export)
+                self.assertIn("Hello!", export.read_text(encoding="utf-8-sig"))
+                with self.assertRaises(FileExistsError):
+                    store.export_saved_items(export)
+            store.delete_saved_item(item_id)
+            self.assertEqual(store.saved_items(), [])
         finally:
             store.close()
             server.shutdown()

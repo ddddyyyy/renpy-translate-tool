@@ -5,6 +5,7 @@ main { width: min(900px, 100%); margin: auto; padding: 28px; }
 header, .row, .section-title, .settings { display: flex; align-items: center; gap: 10px; }
 header { justify-content: space-between; margin-bottom: 18px; }
 h1 { margin: 2px 0; font-size: 26px; }
+h2 { margin: 0; font-size: 18px; }
 small, label { color: #aaa79f; }
 #status { color: #e2b963; }
 section { background: #1a1b1e; border: 1px solid #303136; border-radius: 12px; padding: 18px; margin: 12px 0; }
@@ -37,3 +38,8 @@ body.overlay { background: transparent; overflow: auto; }
 .overlay-result { min-height: 0; padding: 0 0 12px; color: #f4f1e8; font-size: 18px; white-space: pre-wrap; }
 .overlay-result:empty { display: none; }
 .overlay-help { margin-left: auto; color: #8d8b85; }
+.saved-list { margin-top: 10px; }
+.saved-list article { display: flex; align-items: center; gap: 8px; border-top: 1px solid #303136; padding: 10px 0; }
+.saved-list article div { display: grid; flex: 1; }
+.saved-list article span { color: #aaa79f; white-space: pre-wrap; }
+.saved-list article button { padding: 6px 10px; }
