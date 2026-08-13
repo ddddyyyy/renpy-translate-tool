@@ -27,17 +27,24 @@ fn root() -> &'static Path {
 }
 
 fn core(args: &[&str]) -> Result<String, String> {
-    core_with_api_key(args, None)
+    core_with_credentials(args, None, None)
 }
 
-fn core_with_api_key(args: &[&str], api_key: Option<&str>) -> Result<String, String> {
+fn core_with_credentials(
+    args: &[&str],
+    credential_id: Option<&str>,
+    secret: Option<&str>,
+) -> Result<String, String> {
     let mut command = Command::new(python());
     command
         .args(["-m", "renpy_translate"])
         .args(args)
         .current_dir(root());
-    if let Some(api_key) = api_key {
-        command.env("OPENAI_API_KEY", api_key);
+    if let Some(credential_id) = credential_id {
+        command.env("TRANSLATION_CREDENTIAL_ID", credential_id);
+    }
+    if let Some(secret) = secret {
+        command.env("TRANSLATION_SECRET", secret);
     }
     let output = command.output().map_err(|error| error.to_string())?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
@@ -48,12 +55,20 @@ fn core_with_api_key(args: &[&str], api_key: Option<&str>) -> Result<String, Str
     }
 }
 
-fn api_key_entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|error| error.to_string())
+fn credential_entry(provider: &str, field: &str) -> Result<keyring::Entry, String> {
+    if !matches!(provider, "openai" | "deepl" | "google" | "baidu" | "youdao") {
+        return Err("unsupported translation provider".to_owned());
+    }
+    let user = if provider == "openai" && field == "secret" {
+        KEYRING_USER.to_owned()
+    } else {
+        format!("translation-{provider}-{field}")
+    };
+    keyring::Entry::new(KEYRING_SERVICE, &user).map_err(|error| error.to_string())
 }
 
-fn stored_api_key() -> Result<Option<String>, String> {
-    match api_key_entry()?.get_password() {
+fn stored_credential(provider: &str, field: &str) -> Result<Option<String>, String> {
+    match credential_entry(provider, field)?.get_password() {
         Ok(password) => Ok(Some(password)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(error) => Err(error.to_string()),
@@ -61,27 +76,47 @@ fn stored_api_key() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-fn api_key_status() -> Result<bool, String> {
-    Ok(stored_api_key()?.is_some())
+fn credential_status(provider: String) -> Result<String, String> {
+    Ok(format!(
+        "{{\"id\":{},\"secret\":{}}}",
+        stored_credential(&provider, "id")?.is_some(),
+        stored_credential(&provider, "secret")?.is_some()
+    ))
 }
 
 #[tauri::command]
-fn set_api_key(api_key: String) -> Result<(), String> {
-    let api_key = api_key.trim();
-    if api_key.is_empty() {
-        return Err("API Key cannot be empty".to_owned());
+fn set_provider_credentials(
+    provider: String,
+    credential_id: String,
+    secret: String,
+) -> Result<(), String> {
+    if secret.trim().is_empty() {
+        return Err("credential secret cannot be empty".to_owned());
     }
-    api_key_entry()?
-        .set_password(api_key)
-        .map_err(|error| error.to_string())
+    let needs_id = matches!(provider.as_str(), "baidu" | "youdao");
+    if needs_id && credential_id.trim().is_empty() {
+        return Err("App ID/Key cannot be empty".to_owned());
+    }
+    credential_entry(&provider, "secret")?
+        .set_password(secret.trim())
+        .map_err(|error| error.to_string())?;
+    if needs_id {
+        credential_entry(&provider, "id")?
+            .set_password(credential_id.trim())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
-fn clear_api_key() -> Result<(), String> {
-    match api_key_entry()?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(error) => Err(error.to_string()),
+fn clear_provider_credentials(provider: String) -> Result<(), String> {
+    for field in ["id", "secret"] {
+        match credential_entry(&provider, field)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(error) => return Err(error.to_string()),
+        }
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -112,15 +147,19 @@ fn uninstall_hook(path: String) -> Result<String, String> {
 #[tauri::command]
 fn translate_text(
     text: String,
+    provider: String,
     base_url: String,
     model: String,
     target: String,
 ) -> Result<String, String> {
-    let api_key = stored_api_key()?;
-    core_with_api_key(
+    let credential_id = stored_credential(&provider, "id")?;
+    let secret = stored_credential(&provider, "secret")?;
+    core_with_credentials(
         &[
             "translate",
             &text,
+            "--provider",
+            &provider,
             "--base-url",
             &base_url,
             "--model",
@@ -128,7 +167,8 @@ fn translate_text(
             "--target",
             &target,
         ],
-        api_key.as_deref(),
+        credential_id.as_deref(),
+        secret.as_deref(),
     )
 }
 
@@ -304,9 +344,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             install_hook,
             uninstall_hook,
-            api_key_status,
-            set_api_key,
-            clear_api_key,
+            credential_status,
+            set_provider_credentials,
+            clear_provider_credentials,
             resize_overlay,
             translate_text,
             lookup_word,
@@ -335,11 +375,18 @@ fn main() {
 mod tests {
     #[test]
     fn system_keyring_round_trip() {
-        let entry =
-            keyring::Entry::new(super::KEYRING_SERVICE, "translation-api-key-test").unwrap();
-        let _ = entry.delete_credential();
-        entry.set_password("test-only-secret").unwrap();
-        assert_eq!(entry.get_password().unwrap(), "test-only-secret");
-        entry.delete_credential().unwrap();
+        let openai =
+            keyring::Entry::new(super::KEYRING_SERVICE, "translation-test-openai").unwrap();
+        let deepl = keyring::Entry::new(super::KEYRING_SERVICE, "translation-test-deepl").unwrap();
+        for entry in [&openai, &deepl] {
+            let _ = entry.delete_credential();
+        }
+        openai.set_password("openai-secret").unwrap();
+        deepl.set_password("deepl-secret").unwrap();
+        assert_eq!(openai.get_password().unwrap(), "openai-secret");
+        assert_eq!(deepl.get_password().unwrap(), "deepl-secret");
+        for entry in [&openai, &deepl] {
+            entry.delete_credential().unwrap();
+        }
     }
 }

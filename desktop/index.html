@@ -32,16 +32,24 @@
       <label for="selected">待翻译文本</label>
       <textarea id="selected" rows="3"></textarea>
       <div class="settings">
+        <select id="provider" aria-label="翻译服务">
+          <option value="openai">OpenAI 兼容</option>
+          <option value="deepl">DeepL</option>
+          <option value="google">Google Cloud</option>
+          <option value="baidu">百度翻译</option>
+          <option value="youdao">有道翻译</option>
+        </select>
         <input id="base-url" placeholder="API Base URL" value="https://api.openai.com/v1">
         <input id="model" placeholder="模型名称">
         <input id="target" value="zh-CN" aria-label="目标语言">
       </div>
       <div class="row credential">
-        <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="翻译 API Key（保存到系统凭据库）">
-        <button id="save-api-key" class="quiet">保存 Key</button>
-        <button id="clear-api-key" class="quiet">清除</button>
+        <input id="credential-id" autocomplete="off" spellcheck="false" placeholder="App ID / App Key">
+        <input id="credential-secret" type="password" autocomplete="off" spellcheck="false" placeholder="API Key / App Secret（系统凭据库）">
+        <button id="save-credentials" class="quiet">保存凭据</button>
+        <button id="clear-credentials" class="quiet">清除</button>
       </div>
-      <small id="api-key-status">正在检查 API Key…</small>
+      <small id="credential-status">正在检查凭据…</small>
       <div class="display-settings">
         <label for="overlay-opacity">背景不透明度 <output id="overlay-opacity-value">95%</output></label>
         <input id="overlay-opacity" type="range" min="40" max="100" step="5" value="95">

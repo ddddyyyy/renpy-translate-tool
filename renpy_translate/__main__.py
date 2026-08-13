@@ -26,11 +26,13 @@ def main():
 
     run_translate = commands.add_parser("translate")
     run_translate.add_argument("text")
+    run_translate.add_argument("--provider", default="openai")
     run_translate.add_argument("--base-url", required=True)
-    run_translate.add_argument("--model", required=True)
+    run_translate.add_argument("--model", default="")
     run_translate.add_argument("--source", default="auto")
     run_translate.add_argument("--target", default="zh-CN")
-    run_translate.add_argument("--api-key-env", default="OPENAI_API_KEY")
+    run_translate.add_argument("--credential-id-env", default="TRANSLATION_CREDENTIAL_ID")
+    run_translate.add_argument("--secret-env", default="TRANSLATION_SECRET")
 
     save = commands.add_parser("save")
     save.add_argument("kind", choices=("word", "sentence"))
@@ -76,9 +78,11 @@ def main():
                 text=args.text,
                 base_url=args.base_url,
                 model=args.model,
+                provider=args.provider,
                 source_language=args.source,
                 target_language=args.target,
-                api_key=os.environ.get(args.api_key_env, ""),
+                credential_id=os.environ.get(args.credential_id_env, ""),
+                secret=os.environ.get(args.secret_env, "") or os.environ.get("OPENAI_API_KEY", ""),
             )
             print(result + (" [cached]" if cached else ""))
         elif args.command == "save":

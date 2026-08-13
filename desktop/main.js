@@ -2,7 +2,14 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 let current = {};
-const settings = ["base-url", "model", "target", "overlay-opacity"];
+const settings = ["provider", "base-url", "model", "target", "overlay-opacity"];
+const providerDefaults = {
+  openai: ["https://api.openai.com/v1", true, false],
+  deepl: ["https://api-free.deepl.com", false, false],
+  google: ["https://translation.googleapis.com/language/translate/v2", false, false],
+  baidu: ["https://fanyi-api.baidu.com/api/trans/vip/translate", false, true],
+  youdao: ["https://openapi.youdao.com/api", false, true]
+};
 
 function showDisplaySettings() {
   $("overlay-opacity-value").textContent = `${$("overlay-opacity").value}%`;
@@ -26,27 +33,43 @@ $("overlay-opacity").addEventListener("input", () => {
 showDisplaySettings();
 saveSettings();
 
-async function showApiKeyStatus() {
+function showProvider() {
+  const [, needsModel, needsId] = providerDefaults[$("provider").value];
+  $("model").hidden = !needsModel;
+  $("credential-id").hidden = !needsId;
+}
+
+async function showCredentialStatus() {
   try {
-    $("api-key-status").textContent = await invoke("api_key_status")
-      ? "API Key 已保存到系统凭据库"
-      : "尚未保存 API Key；开发环境可使用 OPENAI_API_KEY";
+    const status = JSON.parse(await invoke("credential_status", { provider: $("provider").value }));
+    $("credential-status").textContent = status.secret
+      ? "该服务的凭据已保存到系统凭据库"
+      : "尚未保存该服务的凭据";
   } catch (error) {
-    $("api-key-status").textContent = `系统凭据库不可用：${error}`;
+    $("credential-status").textContent = `系统凭据库不可用：${error}`;
   }
 }
 
-$("save-api-key").onclick = () => run($("save-api-key"), async () => {
-  await invoke("set_api_key", { apiKey: $("api-key").value });
-  $("api-key").value = "";
-  await showApiKeyStatus();
+$("provider").onchange = async () => {
+  const [baseUrl] = providerDefaults[$("provider").value];
+  $("base-url").value = baseUrl;
+  showProvider(); saveSettings(); await showCredentialStatus();
+};
+$("save-credentials").onclick = () => run($("save-credentials"), async () => {
+  await invoke("set_provider_credentials", {
+    provider: $("provider").value,
+    credentialId: $("credential-id").value,
+    secret: $("credential-secret").value
+  });
+  $("credential-id").value = $("credential-secret").value = "";
+  await showCredentialStatus();
 });
-$("clear-api-key").onclick = () => run($("clear-api-key"), async () => {
-  await invoke("clear_api_key");
-  $("api-key").value = "";
-  await showApiKeyStatus();
+$("clear-credentials").onclick = () => run($("clear-credentials"), async () => {
+  await invoke("clear_provider_credentials", { provider: $("provider").value });
+  $("credential-id").value = $("credential-secret").value = "";
+  await showCredentialStatus();
 });
-showApiKeyStatus();
+showProvider(); showCredentialStatus();
 
 listen("text-event", ({ payload }) => {
   current = JSON.parse(payload);
@@ -77,7 +100,7 @@ $("uninstall").onclick = () => run($("uninstall"), async () => {
 $("whole").onclick = () => { $("selected").value = current.text || ""; };
 $("translate").onclick = () => run($("translate"), async () => {
   $("translation").value = await invoke("translate_text", {
-    text: $("selected").value, baseUrl: $("base-url").value,
+    text: $("selected").value, provider: $("provider").value, baseUrl: $("base-url").value,
     model: $("model").value, target: $("target").value
   });
 });

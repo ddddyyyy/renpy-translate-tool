@@ -16,7 +16,9 @@ text, translate either a selection or the whole sentence, and save the result.
 
 Single English words are queried offline from a bundled 38,000-entry subset
 of [ECDICT](https://github.com/skywind3000/ECDICT) (MIT license); phrases and
-sentences continue to use the configured translation API.
+sentences continue to use the configured translation API. The desktop supports
+OpenAI-compatible APIs, DeepL, Google Cloud Translation, Baidu, and Youdao;
+each provider's credentials stay in the operating system credential vault.
 
 - `Ctrl/Cmd + Shift + Space`: open the selectable in-game overlay.
 - `Ctrl/Cmd + Shift + Enter`: translate the current sentence in the overlay.

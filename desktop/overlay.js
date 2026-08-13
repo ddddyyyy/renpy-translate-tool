@@ -75,6 +75,7 @@ async function translate(text) {
   try {
     translated = await invoke("translate_text", {
       text: selected,
+      provider: settings.provider || "openai",
       baseUrl: settings["base-url"],
       model: settings.model,
       target: settings.target || "zh-CN"

@@ -1,10 +1,14 @@
 import hashlib
+import html
 import csv
 import json
 import os
 import socket
 import sqlite3
 import urllib.request
+import urllib.parse
+import uuid
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -241,11 +245,13 @@ def lookup_dictionary(word, path=DICTIONARY_DB):
 
 
 def translate(store, *, text, base_url, model, target_language,
-              source_language="auto", api_key="", opener=None):
+              source_language="auto", provider="openai", credential_id="",
+              secret="", api_key="", opener=None):
     if not text.strip():
         raise ValueError("text must not be empty")
     request_data = {
         "text": text,
+        "provider": provider,
         "base_url": base_url.rstrip("/"),
         "model": model,
         "source_language": source_language,
@@ -258,29 +264,16 @@ def translate(store, *, text, base_url, model, target_language,
     if cached is not None:
         return cached, True
 
-    prompt = "Translate from {} to {}. Return only the translation.".format(
-        source_language, target_language
+    secret = secret or api_key
+    http_request, extract = _translation_request(
+        provider, text, request_data["base_url"], model, source_language,
+        target_language, credential_id, secret
     )
-    body = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": text},
-        ],
-    }).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = "Bearer {}".format(api_key)
-    endpoint = request_data["base_url"]
-    if not endpoint.endswith("/chat/completions"):
-        endpoint += "/chat/completions"
-
-    http_request = urllib.request.Request(endpoint, body, headers, method="POST")
     open_request = opener or urllib.request.urlopen
     with open_request(http_request, timeout=60) as response:
         payload = json.loads(response.read().decode("utf-8"))
     try:
-        translated = payload["choices"][0]["message"]["content"].strip()
+        translated = html.unescape(extract(payload)).strip()
     except (KeyError, IndexError, TypeError, AttributeError) as error:
         raise ValueError("invalid translation response") from error
     if not translated:
@@ -288,6 +281,79 @@ def translate(store, *, text, base_url, model, target_language,
 
     store.cache_translation(cache_key, request_data, translated)
     return translated, False
+
+
+def _translation_request(provider, text, base_url, model, source, target,
+                         credential_id, secret):
+    if provider not in ("openai", "deepl", "google", "baidu", "youdao"):
+        raise ValueError("unsupported translation provider")
+    if not secret:
+        raise ValueError("translation credential is not configured")
+    headers = {"Content-Type": "application/json"}
+    endpoint = base_url.rstrip("/")
+
+    if provider == "openai":
+        if not model:
+            raise ValueError("model is required for OpenAI-compatible translation")
+        endpoint += "" if endpoint.endswith("/chat/completions") else "/chat/completions"
+        headers["Authorization"] = "Bearer {}".format(secret)
+        body = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Translate from {} to {}. Return only the translation.".format(source, target)},
+                {"role": "user", "content": text},
+            ],
+        }
+        extract = lambda payload: payload["choices"][0]["message"]["content"]
+    elif provider == "deepl":
+        endpoint += "" if endpoint.endswith("/v2/translate") else "/v2/translate"
+        headers["Authorization"] = "DeepL-Auth-Key {}".format(secret)
+        body = {"text": [text], "target_lang": _language(provider, target)}
+        if source != "auto":
+            body["source_lang"] = _language(provider, source)
+        extract = lambda payload: payload["translations"][0]["text"]
+    elif provider == "google":
+        headers["X-Goog-Api-Key"] = secret
+        body = {"q": text, "target": _language(provider, target), "format": "text"}
+        if source != "auto":
+            body["source"] = _language(provider, source)
+        extract = lambda payload: payload["data"]["translations"][0]["translatedText"]
+    else:
+        if not credential_id:
+            raise ValueError("App ID/Key is not configured")
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        salt = uuid.uuid4().hex
+        if provider == "baidu":
+            values = {
+                "q": text, "from": _language(provider, source), "to": _language(provider, target),
+                "appid": credential_id, "salt": salt,
+                "sign": hashlib.md5((credential_id + text + salt + secret).encode()).hexdigest(),
+            }
+            extract = lambda payload: payload["trans_result"][0]["dst"]
+        else:
+            current = str(int(time.time()))
+            sign_input = text if len(text) <= 20 else text[:10] + str(len(text)) + text[-10:]
+            values = {
+                "q": text, "from": _language(provider, source), "to": _language(provider, target),
+                "appKey": credential_id, "salt": salt, "signType": "v3", "curtime": current,
+                "sign": hashlib.sha256((credential_id + sign_input + salt + current + secret).encode()).hexdigest(),
+            }
+            extract = lambda payload: payload["translation"][0]
+        body = urllib.parse.urlencode(values).encode()
+        return urllib.request.Request(endpoint, body, headers, method="POST"), extract
+
+    return urllib.request.Request(endpoint, json.dumps(body).encode(), headers, method="POST"), extract
+
+
+def _language(provider, language):
+    language = language.replace("_", "-")
+    if provider == "deepl":
+        return {"zh-CN": "ZH-HANS", "zh-TW": "ZH-HANT"}.get(language, language.upper())
+    if provider in ("baidu", "youdao"):
+        return {"auto": "auto", "zh-CN": "zh-CHS" if provider == "youdao" else "zh",
+                "zh-TW": "zh-CHT" if provider == "youdao" else "cht",
+                "en-US": "en", "en-GB": "en"}.get(language, language.split("-")[0])
+    return language
 
 
 def _now():

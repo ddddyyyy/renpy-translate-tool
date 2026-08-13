@@ -2,6 +2,8 @@ import json
 import tempfile
 import threading
 import unittest
+import hashlib
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -14,13 +16,34 @@ class TranslationHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         type(self).calls += 1
         length = int(self.headers["Content-Length"])
-        request = json.loads(self.rfile.read(length))
-        assert self.headers["Authorization"] == "Bearer test-key"
-        assert request["model"] == "test-model"
-        assert request["messages"][-1]["content"] == "Hello"
-        body = json.dumps({
-            "choices": [{"message": {"content": "你好"}}]
-        }).encode()
+        raw = self.rfile.read(length)
+        if self.path.endswith("/chat/completions"):
+            request = json.loads(raw)
+            assert self.headers["Authorization"] == "Bearer test-secret"
+            assert request["model"] == "test-model"
+            body = {"choices": [{"message": {"content": "你好"}}]}
+        elif self.path.endswith("/v2/translate"):
+            request = json.loads(raw)
+            assert self.headers["Authorization"] == "DeepL-Auth-Key test-secret"
+            assert request == {"text": ["Hello"], "target_lang": "ZH-HANS"}
+            body = {"translations": [{"text": "你好"}]}
+        elif self.path == "/google":
+            request = json.loads(raw)
+            assert self.headers["X-Goog-Api-Key"] == "test-secret"
+            assert request["q"] == "Hello"
+            body = {"data": {"translations": [{"translatedText": "你好"}]}}
+        else:
+            request = {key: value[0] for key, value in urllib.parse.parse_qs(raw.decode()).items()}
+            if self.path == "/baidu":
+                expected = hashlib.md5((request["appid"] + request["q"] + request["salt"] + "test-secret").encode()).hexdigest()
+                assert request["sign"] == expected
+                body = {"trans_result": [{"dst": "你好"}]}
+            else:
+                sign_input = request["q"]
+                expected = hashlib.sha256((request["appKey"] + sign_input + request["salt"] + request["curtime"] + "test-secret").encode()).hexdigest()
+                assert request["sign"] == expected and request["signType"] == "v3"
+                body = {"translation": ["你好"]}
+        body = json.dumps(body).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -77,16 +100,18 @@ class CoreTest(unittest.TestCase):
 
         store = Store(":memory:")
         try:
-            options = {
-                "text": "Hello",
-                "base_url": "http://127.0.0.1:{}".format(server.server_port),
-                "model": "test-model",
-                "target_language": "zh-CN",
-                "api_key": "test-key",
-            }
-            self.assertEqual(translate(store, **options), ("你好", False))
-            self.assertEqual(translate(store, **options), ("你好", True))
-            self.assertEqual(TranslationHandler.calls, 1)
+            base = "http://127.0.0.1:{}".format(server.server_port)
+            for provider, path in (("openai", "/openai"), ("deepl", "/deepl"),
+                                   ("google", "/google"), ("baidu", "/baidu"),
+                                   ("youdao", "/youdao")):
+                options = {
+                    "text": "Hello", "provider": provider, "base_url": base + path,
+                    "model": "test-model", "target_language": "zh-CN",
+                    "credential_id": "test-id", "secret": "test-secret",
+                }
+                self.assertEqual(translate(store, **options), ("你好", False))
+                self.assertEqual(translate(store, **options), ("你好", True))
+            self.assertEqual(TranslationHandler.calls, 5)
 
             item_id = store.save_item("word", "Hello", "你好", "Hello, world.")
             self.assertEqual(store.saved_items()[0]["id"], item_id)
