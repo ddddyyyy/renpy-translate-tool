@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.error
 import uuid
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -134,10 +134,50 @@ class Store:
                 translated_text TEXT NOT NULL,
                 context TEXT NOT NULL,
                 game TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '',
+                group_name TEXT NOT NULL DEFAULT '',
+                review_due TEXT NOT NULL DEFAULT '',
+                review_interval INTEGER NOT NULL DEFAULT 0,
+                sync_id TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                deleted_at TEXT NOT NULL DEFAULT ''
             );
             """
         )
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(saved_items)")}
+        migrations = {
+            "tags": "TEXT NOT NULL DEFAULT ''",
+            "group_name": "TEXT NOT NULL DEFAULT ''",
+            "review_due": "TEXT NOT NULL DEFAULT ''",
+            "review_interval": "INTEGER NOT NULL DEFAULT 0",
+            "sync_id": "TEXT NOT NULL DEFAULT ''",
+            "updated_at": "TEXT NOT NULL DEFAULT ''",
+            "deleted_at": "TEXT NOT NULL DEFAULT ''",
+        }
+        with self.connection:
+            for name, definition in migrations.items():
+                if name not in columns:
+                    self.connection.execute(
+                        "ALTER TABLE saved_items ADD COLUMN {} {}".format(name, definition)
+                    )
+            for row in self.connection.execute(
+                """SELECT id, created_at, sync_id, updated_at, review_due FROM saved_items
+                   WHERE sync_id = '' OR updated_at = '' OR review_due = ''"""
+            ):
+                self.connection.execute(
+                    """UPDATE saved_items SET sync_id = ?, updated_at = ?, review_due = ?
+                       WHERE id = ?""",
+                    (
+                        row["sync_id"] or uuid.uuid4().hex,
+                        row["updated_at"] or row["created_at"],
+                        row["review_due"] or row["created_at"],
+                        row["id"],
+                    ),
+                )
+            self.connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS saved_items_sync_id ON saved_items(sync_id)"
+            )
 
     def close(self):
         self.connection.close()
@@ -182,53 +222,204 @@ class Store:
                 ),
             )
 
-    def save_item(self, kind, source_text, translated_text, context="", game=""):
+    def save_item(self, kind, source_text, translated_text, context="", game="", tags="", group=""):
         if kind not in ("word", "sentence"):
             raise ValueError("kind must be word or sentence")
         if not source_text.strip() or not translated_text.strip():
             raise ValueError("source and translation must not be empty")
+        now = _now()
         with self.connection:
             cursor = self.connection.execute(
                 """INSERT INTO saved_items
-                   (kind, source_text, translated_text, context, game, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (kind, source_text, translated_text, context, game, _now()),
+                   (kind, source_text, translated_text, context, game, created_at,
+                    tags, group_name, review_due, sync_id, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (kind, source_text, translated_text, context, game, now,
+                 tags.strip(), group.strip(), now, uuid.uuid4().hex, now),
             )
         return cursor.lastrowid
 
-    def saved_items(self, query=""):
+    def saved_items(self, query="", group=""):
+        pattern = "%{}%".format(query)
         return self.connection.execute(
             """SELECT * FROM saved_items
-               WHERE source_text LIKE ? OR translated_text LIKE ? OR context LIKE ?
+               WHERE deleted_at = '' AND (? = '' OR group_name = ?) AND
+                     (source_text LIKE ? OR translated_text LIKE ? OR context LIKE ? OR tags LIKE ?)
                ORDER BY id DESC""",
-            tuple("%{}%".format(query) for _ in range(3)),
+            (group, group, pattern, pattern, pattern, pattern),
         ).fetchall()
 
-    def update_saved_item(self, item_id, source_text, translated_text):
+    def update_saved_item(self, item_id, source_text, translated_text, tags="", group=""):
         if not source_text.strip() or not translated_text.strip():
             raise ValueError("source and translation must not be empty")
         with self.connection:
             cursor = self.connection.execute(
-                "UPDATE saved_items SET source_text = ?, translated_text = ? WHERE id = ?",
-                (source_text, translated_text, item_id),
+                """UPDATE saved_items SET source_text = ?, translated_text = ?, tags = ?,
+                   group_name = ?, updated_at = ? WHERE id = ? AND deleted_at = ''""",
+                (source_text, translated_text, tags.strip(), group.strip(), _now(), item_id),
             )
         if not cursor.rowcount:
             raise ValueError("saved item not found")
 
     def delete_saved_item(self, item_id):
+        now = _now()
         with self.connection:
-            cursor = self.connection.execute("DELETE FROM saved_items WHERE id = ?", (item_id,))
+            cursor = self.connection.execute(
+                """UPDATE saved_items SET deleted_at = ?, updated_at = ?
+                   WHERE id = ? AND deleted_at = ''""",
+                (now, now, item_id),
+            )
         if not cursor.rowcount:
             raise ValueError("saved item not found")
+
+    def due_saved_items(self, limit=50):
+        return self.connection.execute(
+            """SELECT * FROM saved_items WHERE deleted_at = '' AND review_due <= ?
+               ORDER BY review_due, id LIMIT ?""",
+            (_now(), limit),
+        ).fetchall()
+
+    def review_saved_item(self, item_id, rating):
+        if rating not in ("again", "hard", "good", "easy"):
+            raise ValueError("rating must be again, hard, good, or easy")
+        row = self.connection.execute(
+            "SELECT review_interval FROM saved_items WHERE id = ? AND deleted_at = ''",
+            (item_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError("saved item not found")
+        previous = row[0]
+        days = {
+            "again": 0,
+            "hard": max(1, round(previous * 1.2)),
+            "good": max(1, round(previous * 2.5)),
+            "easy": max(3, round(previous * 4)),
+        }[rating]
+        now = datetime.now(timezone.utc)
+        with self.connection:
+            self.connection.execute(
+                """UPDATE saved_items SET review_interval = ?, review_due = ?, updated_at = ?
+                   WHERE id = ?""",
+                (days, (now + timedelta(days=days)).isoformat(), now.isoformat(), item_id),
+            )
+
+    def import_saved_items(self, path):
+        path = Path(path)
+        if path.stat().st_size > 20 * 1024 * 1024:
+            raise ValueError("wordbook CSV is too large")
+        with path.open(encoding="utf-8-sig", newline="") as file:
+            reader = csv.DictReader(file)
+            if not reader.fieldnames or not {"source", "translation"}.issubset(reader.fieldnames):
+                raise ValueError("CSV must contain source and translation columns")
+            added = 0
+            for row in reader:
+                source = (row["source"] or "").strip()
+                translation = (row["translation"] or "").strip()
+                if not source or not translation:
+                    continue
+                duplicate = self.connection.execute(
+                    """SELECT 1 FROM saved_items WHERE deleted_at = '' AND
+                       source_text = ? AND translated_text = ?""",
+                    (source, translation),
+                ).fetchone()
+                if duplicate:
+                    continue
+                kind = row.get("type") or ""
+                if kind not in ("word", "sentence"):
+                    kind = "word" if " " not in source.strip() else "sentence"
+                self.save_item(kind, source, translation, row.get("context") or "",
+                               row.get("game") or "", row.get("tags") or "",
+                               row.get("group") or "")
+                added += 1
+        return added
+
+    def sync_saved_items(self, directory):
+        directory = Path(directory).expanduser().resolve()
+        if not directory.is_dir():
+            raise ValueError("sync directory does not exist")
+        target = directory / "renpy-translate-wordbook.json"
+        if target.exists():
+            if target.stat().st_size > 20 * 1024 * 1024:
+                raise ValueError("wordbook sync file is too large")
+            payload = json.loads(target.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or payload.get("version") != 1 or not isinstance(payload.get("items"), list):
+                raise ValueError("unsupported wordbook sync file")
+            with self.connection:
+                for item in payload["items"]:
+                    record = _validate_sync_item(item)
+                    current = self.connection.execute(
+                        "SELECT updated_at FROM saved_items WHERE sync_id = ?", (record["sync_id"],)
+                    ).fetchone()
+                    if current and _sync_time(current["updated_at"]) >= _sync_time(record["updated_at"]):
+                        continue
+                    self.connection.execute(
+                        """INSERT INTO saved_items
+                           (kind, source_text, translated_text, context, game, created_at, tags,
+                            group_name, review_due, review_interval, sync_id, updated_at, deleted_at)
+                           VALUES (:kind, :source_text, :translated_text, :context, :game,
+                                   :created_at, :tags, :group_name, :review_due, :review_interval,
+                                   :sync_id, :updated_at, :deleted_at)
+                           ON CONFLICT(sync_id) DO UPDATE SET
+                           kind=excluded.kind, source_text=excluded.source_text,
+                           translated_text=excluded.translated_text, context=excluded.context,
+                           game=excluded.game, created_at=excluded.created_at, tags=excluded.tags,
+                           group_name=excluded.group_name, review_due=excluded.review_due,
+                           review_interval=excluded.review_interval, updated_at=excluded.updated_at,
+                           deleted_at=excluded.deleted_at""",
+                        record,
+                    )
+        fields = ("kind", "source_text", "translated_text", "context", "game", "created_at",
+                  "tags", "group_name", "review_due", "review_interval", "sync_id",
+                  "updated_at", "deleted_at")
+        items = [dict(zip(fields, row)) for row in self.connection.execute(
+            "SELECT {} FROM saved_items".format(", ".join(fields))
+        )]
+        temporary = target.with_name("{}.{}.tmp".format(target.name, uuid.uuid4().hex))
+        try:
+            temporary.write_text(json.dumps({"version": 1, "items": items}, ensure_ascii=False),
+                                 encoding="utf-8")
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return len([item for item in items if not item["deleted_at"]])
 
     def export_saved_items(self, path):
         with Path(path).open("x", encoding="utf-8-sig", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(("type", "source", "translation", "context", "game", "created_at"))
+            writer.writerow(("type", "source", "translation", "context", "game", "tags", "group", "created_at"))
             writer.writerows(
-                (row["kind"], row["source_text"], row["translated_text"], row["context"], row["game"], row["created_at"])
+                (row["kind"], row["source_text"], row["translated_text"], row["context"],
+                 row["game"], row["tags"], row["group_name"], row["created_at"])
                 for row in self.saved_items()
             )
+
+
+def _validate_sync_item(item):
+    fields = {
+        "kind": str, "source_text": str, "translated_text": str, "context": str,
+        "game": str, "created_at": str, "tags": str, "group_name": str,
+        "review_due": str, "review_interval": int, "sync_id": str,
+        "updated_at": str, "deleted_at": str,
+    }
+    if not isinstance(item, dict) or any(not isinstance(item.get(key), kind) for key, kind in fields.items()):
+        raise ValueError("invalid wordbook sync item")
+    if item["kind"] not in ("word", "sentence") or not item["source_text"].strip() or not item["translated_text"].strip():
+        raise ValueError("invalid wordbook sync item")
+    if not item["sync_id"] or item["review_interval"] < 0:
+        raise ValueError("invalid wordbook sync item")
+    record = {key: item[key] for key in fields}
+    for field in ("created_at", "review_due", "updated_at"):
+        record[field] = _sync_time(item[field]).astimezone(timezone.utc).isoformat()
+    if item["deleted_at"]:
+        record["deleted_at"] = _sync_time(item["deleted_at"]).astimezone(timezone.utc).isoformat()
+    return record
+
+
+def _sync_time(value):
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        raise ValueError("sync timestamps must include a timezone")
+    return parsed
 
 
 def lookup_dictionary(word, path=DICTIONARY_DB):

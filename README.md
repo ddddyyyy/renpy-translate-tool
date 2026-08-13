@@ -70,7 +70,10 @@ python3 -m renpy_translate save word "Hello" "你好" --context "Hello, world."
 python3 -m renpy_translate saved
 ```
 
-The desktop wordbook can search, edit, delete, and export saved entries as CSV.
+The desktop wordbook can search, edit, tag, group, pronounce, review, import,
+and export entries. A user-selected shared folder can synchronize the wordbook
+between devices using a portable JSON file; no cloud account is required by
+the app.
 
 ## Uninstall
 

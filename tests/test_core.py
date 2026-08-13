@@ -4,6 +4,7 @@ import threading
 import unittest
 import hashlib
 import urllib.parse
+import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -149,6 +150,54 @@ class CoreTest(unittest.TestCase):
             store.close()
             server.shutdown()
             server.server_close()
+
+    def test_wordbook_import_review_sync_and_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = root / "legacy.sqlite3"
+            connection = sqlite3.connect(legacy)
+            connection.execute(
+                """CREATE TABLE saved_items (
+                   id INTEGER PRIMARY KEY, kind TEXT NOT NULL, source_text TEXT NOT NULL,
+                   translated_text TEXT NOT NULL, context TEXT NOT NULL, game TEXT NOT NULL,
+                   created_at TEXT NOT NULL)"""
+            )
+            connection.execute(
+                "INSERT INTO saved_items VALUES (1, 'word', 'old', '旧', '', '', '2026-01-01T00:00:00+00:00')"
+            )
+            connection.commit()
+            connection.close()
+
+            store = Store(legacy)
+            self.assertTrue(store.saved_items()[0]["sync_id"])
+            csv_path = root / "import.csv"
+            csv_path.write_text(
+                "type,source,translation,tags,group\nword,hello,你好,greeting,basics\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(store.import_saved_items(csv_path), 1)
+            self.assertEqual(store.import_saved_items(csv_path), 0)
+            item = store.saved_items("greeting")[0]
+            self.assertEqual(item["group_name"], "basics")
+            store.review_saved_item(item["id"], "good")
+            self.assertNotIn(item["id"], [row["id"] for row in store.due_saved_items()])
+
+            sync_dir = root / "sync"
+            sync_dir.mkdir()
+            self.assertEqual(store.sync_saved_items(sync_dir), 2)
+            other = Store(root / "other.sqlite3")
+            self.assertEqual(other.sync_saved_items(sync_dir), 2)
+            other_item = other.saved_items("hello")[0]
+            other.update_saved_item(other_item["id"], "hello", "您好", "greeting", "basics")
+            other.sync_saved_items(sync_dir)
+            store.sync_saved_items(sync_dir)
+            self.assertEqual(store.saved_items("hello")[0]["translated_text"], "您好")
+            other.delete_saved_item(other_item["id"])
+            other.sync_saved_items(sync_dir)
+            store.sync_saved_items(sync_dir)
+            self.assertEqual(store.saved_items("hello"), [])
+            other.close()
+            store.close()
 
 
 if __name__ == "__main__":

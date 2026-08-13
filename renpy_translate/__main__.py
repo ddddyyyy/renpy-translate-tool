@@ -40,17 +40,30 @@ def main():
     save.add_argument("translation")
     save.add_argument("--context", default="")
     save.add_argument("--game", default="")
+    save.add_argument("--tags", default="")
+    save.add_argument("--group", default="")
     commands.add_parser("saved")
     saved = commands.choices["saved"]
     saved.add_argument("--query", default="")
+    saved.add_argument("--group", default="")
     update = commands.add_parser("update-saved")
     update.add_argument("id", type=int)
     update.add_argument("source")
     update.add_argument("translation")
+    update.add_argument("--tags", default="")
+    update.add_argument("--group", default="")
     delete = commands.add_parser("delete-saved")
     delete.add_argument("id", type=int)
     export = commands.add_parser("export-saved")
     export.add_argument("path")
+    import_saved = commands.add_parser("import-saved")
+    import_saved.add_argument("path")
+    commands.add_parser("due-saved")
+    review = commands.add_parser("review-saved")
+    review.add_argument("id", type=int)
+    review.add_argument("rating", choices=("again", "hard", "good", "easy"))
+    sync = commands.add_parser("sync-saved")
+    sync.add_argument("directory")
     lookup = commands.add_parser("lookup")
     lookup.add_argument("word")
     check_update = commands.add_parser("check-update")
@@ -92,17 +105,26 @@ def main():
             print(result + (" [cached]" if cached else ""))
         elif args.command == "save":
             print(store.save_item(
-                args.kind, args.source, args.translation, args.context, args.game
+                args.kind, args.source, args.translation, args.context, args.game,
+                args.tags, args.group
             ))
         elif args.command == "saved":
-            print(json.dumps([dict(item) for item in store.saved_items(args.query)], ensure_ascii=False))
+            print(json.dumps([dict(item) for item in store.saved_items(args.query, args.group)], ensure_ascii=False))
         elif args.command == "update-saved":
-            store.update_saved_item(args.id, args.source, args.translation)
+            store.update_saved_item(args.id, args.source, args.translation, args.tags, args.group)
         elif args.command == "delete-saved":
             store.delete_saved_item(args.id)
         elif args.command == "export-saved":
             store.export_saved_items(args.path)
             print(args.path)
+        elif args.command == "import-saved":
+            print(store.import_saved_items(args.path))
+        elif args.command == "due-saved":
+            print(json.dumps([dict(item) for item in store.due_saved_items()], ensure_ascii=False))
+        elif args.command == "review-saved":
+            store.review_saved_item(args.id, args.rating)
+        elif args.command == "sync-saved":
+            print(store.sync_saved_items(args.directory))
     finally:
         store.close()
 

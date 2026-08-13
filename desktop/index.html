@@ -78,13 +78,36 @@
     <section>
       <div class="section-title"><label for="translation">翻译结果</label></div>
       <textarea id="translation" rows="4"></textarea>
-      <button id="save" class="quiet">保存到单词本</button>
+      <div class="row">
+        <input id="save-tags" placeholder="标签（逗号分隔）">
+        <input id="save-group" placeholder="分组">
+        <button id="save" class="quiet">保存到单词本</button>
+      </div>
     </section>
 
     <section>
-      <div class="section-title"><h2>单词本</h2><button id="export-saved" class="quiet">导出 CSV</button></div>
-      <input id="saved-search" placeholder="搜索原文、翻译或上下文">
+      <div class="section-title"><h2>单词本</h2><div class="row"><button id="import-saved" class="quiet">导入 CSV</button><button id="export-saved" class="quiet">导出 CSV</button></div></div>
+      <div class="row">
+        <input id="saved-search" placeholder="搜索原文、翻译、上下文或标签">
+        <input id="saved-group" placeholder="筛选分组">
+        <button id="start-review" class="quiet">开始复习</button>
+      </div>
+      <div id="review-card" class="review-card" hidden>
+        <strong id="review-source"></strong>
+        <button id="speak-review" class="quiet" aria-label="朗读原文">朗读</button>
+        <p id="review-translation" hidden></p>
+        <button id="reveal-review">显示答案</button>
+        <div id="review-ratings" class="row" hidden>
+          <button data-rating="again" class="quiet">重来</button><button data-rating="hard" class="quiet">困难</button>
+          <button data-rating="good">记住了</button><button data-rating="easy" class="quiet">简单</button>
+        </div>
+      </div>
       <div id="saved-list" class="saved-list"><small>暂无收藏</small></div>
+      <div class="row sync-controls">
+        <button id="pick-sync" class="quiet">选择同步目录</button>
+        <button id="sync-saved" class="quiet">立即同步</button>
+        <small id="sync-directory">尚未设置同步目录</small>
+      </div>
       <output id="saved-status"></output>
     </section>
   </main>

@@ -46,4 +46,9 @@ body.overlay { background: transparent; overflow: auto; }
 .saved-list article { display: flex; align-items: center; gap: 8px; border-top: 1px solid #303136; padding: 10px 0; }
 .saved-list article div { display: grid; flex: 1; }
 .saved-list article span { color: #aaa79f; white-space: pre-wrap; }
+.saved-list article small { overflow-wrap: anywhere; }
 .saved-list article button { padding: 6px 10px; }
+.review-card { margin: 12px 0; padding: 16px; border: 1px solid #3a3b40; border-radius: 10px; }
+.review-card strong { display: block; font-size: 22px; margin-bottom: 10px; }
+.review-card p { font-size: 18px; white-space: pre-wrap; }
+.sync-controls { margin-top: 14px; }

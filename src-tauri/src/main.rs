@@ -360,7 +360,11 @@ fn save_item(
     translation: String,
     context: String,
     game: String,
+    tags: Option<String>,
+    group: Option<String>,
 ) -> Result<String, String> {
+    let tags = tags.unwrap_or_default();
+    let group = group.unwrap_or_default();
     core(&[
         "save",
         &kind,
@@ -370,17 +374,39 @@ fn save_item(
         &context,
         "--game",
         &game,
+        "--tags",
+        &tags,
+        "--group",
+        &group,
     ])
 }
 
 #[tauri::command]
-fn list_saved(query: String) -> Result<String, String> {
-    core(&["saved", "--query", &query])
+fn list_saved(query: String, group: Option<String>) -> Result<String, String> {
+    let group = group.unwrap_or_default();
+    core(&["saved", "--query", &query, "--group", &group])
 }
 
 #[tauri::command]
-fn update_saved(id: i64, source: String, translation: String) -> Result<String, String> {
-    core(&["update-saved", &id.to_string(), &source, &translation])
+fn update_saved(
+    id: i64,
+    source: String,
+    translation: String,
+    tags: Option<String>,
+    group: Option<String>,
+) -> Result<String, String> {
+    let tags = tags.unwrap_or_default();
+    let group = group.unwrap_or_default();
+    core(&[
+        "update-saved",
+        &id.to_string(),
+        &source,
+        &translation,
+        "--tags",
+        &tags,
+        "--group",
+        &group,
+    ])
 }
 
 #[tauri::command]
@@ -409,6 +435,35 @@ fn export_saved() -> Result<String, String> {
         .find(|path| !path.exists())
         .unwrap();
     core(&["export-saved", &path.to_string_lossy()])
+}
+
+#[tauri::command]
+async fn import_saved(app: AppHandle) -> Result<Option<String>, String> {
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("CSV", &["csv"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = path.into_path().map_err(|error| error.to_string())?;
+    core(&["import-saved", &path.to_string_lossy()]).map(Some)
+}
+
+#[tauri::command]
+fn due_saved() -> Result<String, String> {
+    core(&["due-saved"])
+}
+
+#[tauri::command]
+fn review_saved(id: i64, rating: String) -> Result<String, String> {
+    core(&["review-saved", &id.to_string(), &rating])
+}
+
+#[tauri::command]
+fn sync_saved(directory: String) -> Result<String, String> {
+    core(&["sync-saved", &directory])
 }
 
 #[tauri::command]
@@ -581,6 +636,10 @@ fn main() {
             update_saved,
             delete_saved,
             export_saved,
+            import_saved,
+            due_saved,
+            review_saved,
+            sync_saved,
             close_overlay,
             current_text,
             current_overlay_mode
