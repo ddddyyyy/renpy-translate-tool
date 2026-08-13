@@ -10,14 +10,15 @@
   <main>
     <section class="overlay-panel">
       <header>
-        <div><small id="speaker">当前文本</small></div>
-        <small id="mode">拖动选择词语或句子</small>
+        <div data-tauri-drag-region><small data-tauri-drag-region id="speaker">当前文本</small></div>
+        <small data-tauri-drag-region id="mode">拖动选择词语或句子</small>
         <button id="close" class="quiet" aria-label="关闭">×</button>
       </header>
       <p id="source" class="overlay-source">等待游戏文本…</p>
       <output id="result" class="overlay-result"></output>
       <div class="row">
         <button id="translate">翻译选中内容</button>
+        <button id="cancel" class="quiet" hidden>取消</button>
         <button id="save" class="quiet" disabled>收藏</button>
         <small class="overlay-help">双击选词 · 拖动选句 · Esc 返回游戏</small>
       </div>

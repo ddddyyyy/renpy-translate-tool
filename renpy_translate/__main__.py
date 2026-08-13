@@ -4,7 +4,7 @@ import os
 import socket
 from pathlib import Path
 
-from .core import HOST, PORT, Store, install_hook, lookup_dictionary, receive_once, translate, uninstall_hook
+from .core import HOST, PORT, Store, install_hook, lookup_dictionary, receive_once, translate, uninstall_hook, update_status
 
 
 DEFAULT_DB = Path.home() / ".renpy-translate-tool.sqlite3"
@@ -53,6 +53,8 @@ def main():
     export.add_argument("path")
     lookup = commands.add_parser("lookup")
     lookup.add_argument("word")
+    check_update = commands.add_parser("check-update")
+    check_update.add_argument("version")
     args = parser.parse_args()
 
     if args.command == "install":
@@ -66,6 +68,9 @@ def main():
 
     if args.command == "lookup":
         print(json.dumps(lookup_dictionary(args.word), ensure_ascii=False))
+        return
+    if args.command == "check-update":
+        print(json.dumps(update_status(args.version), ensure_ascii=False))
         return
 
     store = Store(args.db)

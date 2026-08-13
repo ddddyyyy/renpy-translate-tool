@@ -7,14 +7,22 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from renpy_translate.core import HOOK_NAME, Store, install_hook, lookup_dictionary, translate, uninstall_hook
+from renpy_translate.core import HOOK_NAME, Store, install_hook, lookup_dictionary, translate, uninstall_hook, update_status
 
 
 class TranslationHandler(BaseHTTPRequestHandler):
     calls = 0
+    retries = 0
 
     def do_POST(self):
         type(self).calls += 1
+        if self.path.endswith("/retry/chat/completions") and type(self).retries < 1:
+            type(self).retries += 1
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(429)
+            self.send_header("Retry-After", "0")
+            self.end_headers()
+            return
         length = int(self.headers["Content-Length"])
         raw = self.rfile.read(length)
         if self.path.endswith("/chat/completions"):
@@ -55,6 +63,12 @@ class TranslationHandler(BaseHTTPRequestHandler):
 
 
 class CoreTest(unittest.TestCase):
+    def test_update_status(self):
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+            def read(self): return json.dumps({"tag_name": "v0.2.0", "html_url": "https://example.test/release"}).encode()
+        self.assertTrue(update_status("0.1.0", opener=lambda *_args, **_kwargs: Response())["available"])
     def test_dictionary_lookup(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as file:
             import sqlite3
@@ -112,6 +126,11 @@ class CoreTest(unittest.TestCase):
                 self.assertEqual(translate(store, **options), ("你好", False))
                 self.assertEqual(translate(store, **options), ("你好", True))
             self.assertEqual(TranslationHandler.calls, 5)
+
+            TranslationHandler.retries = 0
+            retry = dict(options, provider="openai", base_url=base + "/retry", text="Retry")
+            self.assertEqual(translate(store, **retry), ("你好", False))
+            self.assertEqual(TranslationHandler.retries, 1)
 
             item_id = store.save_item("word", "Hello", "你好", "Hello, world.")
             self.assertEqual(store.saved_items()[0]["id"], item_id)

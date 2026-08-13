@@ -1,23 +1,35 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const overlayWindow = window.__TAURI__.window.getCurrentWindow();
 const $ = (id) => document.getElementById(id);
 let current = {};
 let selected = "";
 let translated = "";
 let hideTimer;
 let resizeTimer;
+let moveTimer;
 
 try {
-  const { width, height } = JSON.parse(localStorage.getItem("overlay-size")) || {};
-  if (Number(width) && Number(height)) invoke("resize_overlay", { width: Number(width), height: Number(height) }).catch(() => {});
+  const { width, height, x, y } = JSON.parse(localStorage.getItem("overlay-size")) || {};
+  if (Number(width) && Number(height)) {
+    const command = Number.isFinite(x) && Number.isFinite(y) ? "restore_overlay" : "resize_overlay";
+    invoke(command, { width: Number(width), height: Number(height), x, y }).catch(() => {});
+  }
 } catch (_) {}
 
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => localStorage.setItem("overlay-size", JSON.stringify({
-    width: window.innerWidth,
-    height: window.innerHeight
-  })), 200);
+  resizeTimer = setTimeout(() => {
+    const saved = JSON.parse(localStorage.getItem("overlay-size")) || {};
+    localStorage.setItem("overlay-size", JSON.stringify({ ...saved, width: window.innerWidth, height: window.innerHeight }));
+  }, 200);
+});
+overlayWindow.onMoved(({ payload }) => {
+  clearTimeout(moveTimer);
+  moveTimer = setTimeout(() => {
+    const saved = JSON.parse(localStorage.getItem("overlay-size")) || {};
+    localStorage.setItem("overlay-size", JSON.stringify({ ...saved, x: payload.x, y: payload.y }));
+  }, 200);
 });
 
 function displaySettings() {
@@ -72,18 +84,24 @@ async function translate(text) {
   if (!settings.model) return $("result").textContent = "请先在主窗口填写翻译模型。";
 
   $("result").textContent = "翻译中…";
+  const runId = ++translationRun;
+  $("cancel").hidden = false;
   try {
-    translated = await invoke("translate_text", {
+    const result = await invoke("translate_text", {
       text: selected,
       provider: settings.provider || "openai",
       baseUrl: settings["base-url"],
       model: settings.model,
       target: settings.target || "zh-CN"
     });
+    if (runId !== translationRun) return;
+    translated = result;
     $("result").textContent = translated;
     $("save").disabled = false;
   } catch (error) {
-    $("result").textContent = String(error);
+    if (runId === translationRun) $("result").textContent = String(error);
+  } finally {
+    if (runId === translationRun) $("cancel").hidden = true;
   }
 }
 
@@ -105,6 +123,11 @@ $("source").addEventListener("mouseup", () => {
   if (text) (/^[A-Za-z'-]+$/.test(text) ? lookup(text) : translate(text));
 });
 $("translate").onclick = () => translate(selected || current.text);
+let translationRun = 0;
+$("cancel").onclick = async () => {
+  translationRun++; $("cancel").hidden = true; $("result").textContent = "已取消";
+  await invoke("cancel_translation");
+};
 $("save").onclick = async () => {
   await invoke("save_item", {
     kind: selected === current.text ? "sentence" : "word",

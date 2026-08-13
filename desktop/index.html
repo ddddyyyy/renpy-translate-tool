@@ -17,6 +17,7 @@
       <label for="game">游戏目录</label>
       <div class="row">
         <input id="game" placeholder="选择或粘贴 Ren'Py 游戏目录">
+        <button id="pick-game" class="quiet">选择目录</button>
         <button id="install">安装 Hook</button>
         <button id="uninstall" class="quiet">卸载</button>
       </div>
@@ -56,7 +57,21 @@
       </div>
       <div class="row actions">
         <button id="translate">翻译</button>
+        <button id="cancel-translation" class="quiet" hidden>取消</button>
         <button id="whole" class="quiet">使用整句</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>应用设置</h2>
+      <div class="settings app-settings">
+        <input id="select-shortcut" value="CmdOrCtrl+Shift+Space" aria-label="选词快捷键">
+        <input id="sentence-shortcut" value="CmdOrCtrl+Shift+Enter" aria-label="整句快捷键">
+        <button id="save-shortcuts" class="quiet">保存快捷键</button>
+      </div>
+      <div class="row">
+        <button id="check-update" class="quiet">检查更新</button>
+        <output id="app-status"></output>
       </div>
     </section>
 

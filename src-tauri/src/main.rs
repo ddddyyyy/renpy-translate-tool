@@ -2,14 +2,26 @@ use std::{
     io::{BufRead, BufReader},
     path::Path,
     process::{Child, Command, Stdio},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+    time::Duration,
 };
+use tauri::{menu::MenuBuilder, tray::TrayIconBuilder};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize};
-use tauri_plugin_global_shortcut::{Shortcut, ShortcutEvent, ShortcutState};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
+use tauri_plugin_opener::OpenerExt;
 
-struct Listener(Mutex<Option<Child>>);
+struct Listener {
+    child: Mutex<Option<Child>>,
+    stop: AtomicBool,
+}
 struct CurrentText(Mutex<Option<String>>);
 struct OverlayMode(Mutex<String>);
+struct Shortcuts(Mutex<(Shortcut, Shortcut)>);
+struct TranslationProcess(Mutex<Option<Child>>);
 
 const KEYRING_SERVICE: &str = "dev.renpy-translate-tool";
 const KEYRING_USER: &str = "translation-api-key";
@@ -52,6 +64,59 @@ fn core_with_credentials(
         Ok(stdout)
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+fn translation_core(
+    app: &AppHandle,
+    args: &[&str],
+    credential_id: Option<&str>,
+    secret: Option<&str>,
+) -> Result<String, String> {
+    let mut command = Command::new(python());
+    command
+        .args(["-m", "renpy_translate"])
+        .args(args)
+        .current_dir(root())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(credential_id) = credential_id {
+        command.env("TRANSLATION_CREDENTIAL_ID", credential_id);
+    }
+    if let Some(secret) = secret {
+        command.env("TRANSLATION_SECRET", secret);
+    }
+    let state = app.state::<TranslationProcess>();
+    let mut slot = state.0.lock().unwrap();
+    if slot.is_some() {
+        return Err("another translation is already running".to_owned());
+    }
+    *slot = Some(command.spawn().map_err(|error| error.to_string())?);
+    drop(slot);
+
+    loop {
+        std::thread::sleep(Duration::from_millis(30));
+        let mut slot = state.0.lock().unwrap();
+        let Some(child) = slot.as_mut() else {
+            return Err("translation canceled".to_owned());
+        };
+        if child
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            let child = slot.take().unwrap();
+            drop(slot);
+            let output = child
+                .wait_with_output()
+                .map_err(|error| error.to_string())?;
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            return if output.status.success() {
+                Ok(stdout)
+            } else {
+                Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+            };
+        }
     }
 }
 
@@ -135,6 +200,100 @@ fn resize_overlay(app: AppHandle, width: f64, height: f64) -> Result<(), String>
 }
 
 #[tauri::command]
+fn restore_overlay(app: AppHandle, width: f64, height: f64, x: i32, y: i32) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() {
+        return Err("invalid overlay geometry".to_owned());
+    }
+    let window = app
+        .get_webview_window("overlay")
+        .ok_or("overlay window is unavailable")?;
+    let logical = LogicalSize::new(width.clamp(500.0, 2400.0), height.clamp(140.0, 1400.0));
+    let physical = logical.to_physical(window.scale_factor().map_err(|error| error.to_string())?);
+    let monitors = window
+        .available_monitors()
+        .map_err(|error| error.to_string())?;
+    let monitor = monitors
+        .iter()
+        .find(|monitor| {
+            let area = monitor.work_area();
+            x >= area.position.x
+                && y >= area.position.y
+                && x < area.position.x + area.size.width as i32
+                && y < area.position.y + area.size.height as i32
+        })
+        .or(monitors.first())
+        .ok_or("no monitor is available")?;
+    let area = monitor.work_area();
+    let max_x = (area.position.x + area.size.width.saturating_sub(physical.width) as i32)
+        .max(area.position.x);
+    let max_y = (area.position.y + area.size.height.saturating_sub(physical.height) as i32)
+        .max(area.position.y);
+    window
+        .set_size(logical)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_position(PhysicalPosition::new(
+            x.clamp(area.position.x, max_x),
+            y.clamp(area.position.y, max_y),
+        ))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn pick_directory(app: AppHandle) -> Result<Option<String>, String> {
+    Ok(app
+        .dialog()
+        .file()
+        .blocking_pick_folder()
+        .map(|path| {
+            path.into_path()
+                .map(|path| path.to_string_lossy().into_owned())
+        })
+        .transpose()
+        .map_err(|error| error.to_string())?)
+}
+
+#[tauri::command]
+fn set_shortcuts(app: AppHandle, select: String, sentence: String) -> Result<(), String> {
+    let select: Shortcut = select
+        .parse()
+        .map_err(|error| format!("invalid select shortcut: {error}"))?;
+    let sentence: Shortcut = sentence
+        .parse()
+        .map_err(|error| format!("invalid sentence shortcut: {error}"))?;
+    if select.id() == sentence.id() {
+        return Err("the two shortcuts must be different".to_owned());
+    }
+    let global = app.global_shortcut();
+    let shortcuts = app.state::<Shortcuts>();
+    let mut current = shortcuts.0.lock().unwrap();
+    global
+        .unregister_multiple([current.0, current.1])
+        .map_err(|error| error.to_string())?;
+    if let Err(error) = global.register_multiple([select, sentence]) {
+        let _ = global.register_multiple([current.0, current.1]);
+        return Err(format!("shortcut is unavailable: {error}"));
+    }
+    *current = (select, sentence);
+    Ok(())
+}
+
+#[tauri::command]
+fn check_update() -> Result<String, String> {
+    core(&["check-update", env!("CARGO_PKG_VERSION")])
+}
+
+#[tauri::command]
+fn open_release(app: AppHandle, url: String) -> Result<(), String> {
+    if !url.starts_with("https://github.com/ddddyyyy/renpy-translate-tool/releases/") {
+        return Err("untrusted release URL".to_owned());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn install_hook(path: String) -> Result<String, String> {
     core(&["install", &path])
 }
@@ -145,7 +304,8 @@ fn uninstall_hook(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn translate_text(
+async fn translate_text(
+    app: AppHandle,
     text: String,
     provider: String,
     base_url: String,
@@ -154,22 +314,38 @@ fn translate_text(
 ) -> Result<String, String> {
     let credential_id = stored_credential(&provider, "id")?;
     let secret = stored_credential(&provider, "secret")?;
-    core_with_credentials(
-        &[
-            "translate",
-            &text,
-            "--provider",
-            &provider,
-            "--base-url",
-            &base_url,
-            "--model",
-            &model,
-            "--target",
-            &target,
-        ],
-        credential_id.as_deref(),
-        secret.as_deref(),
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        translation_core(
+            &app,
+            &[
+                "translate",
+                &text,
+                "--provider",
+                &provider,
+                "--base-url",
+                &base_url,
+                "--model",
+                &model,
+                "--target",
+                &target,
+            ],
+            credential_id.as_deref(),
+            secret.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn cancel_translation(app: AppHandle) -> Result<(), String> {
+    if let Some(mut child) = app.state::<TranslationProcess>().0.lock().unwrap().take() {
+        child
+            .kill()
+            .and_then(|_| child.wait())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -298,32 +474,46 @@ fn position_overlay(app: &AppHandle, size: Option<PhysicalSize<u32>>) {
 
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(CurrentText(Mutex::new(None)));
             app.manage(OverlayMode(Mutex::new("select".to_owned())));
-            // ponytail: development uses system Python; bundle a sidecar when shipping installers.
-            let mut child = Command::new(python())
-                .args(["-m", "renpy_translate", "listen"])
-                .current_dir(root())
-                .stdout(Stdio::piped())
-                .spawn()?;
-            let stdout = child.stdout.take().unwrap();
+            app.manage(TranslationProcess(Mutex::new(None)));
+            app.manage(Listener {
+                child: Mutex::new(None),
+                stop: AtomicBool::new(false),
+            });
             let handle = app.handle().clone();
             std::thread::spawn(move || {
-                for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                    if line.starts_with('{') {
-                        *handle.state::<CurrentText>().0.lock().unwrap() = Some(line.clone());
-                        let _ = handle.emit("text-event", line);
+                while !handle.state::<Listener>().stop.load(Ordering::Relaxed) {
+                    // ponytail: development uses system Python; bundle a sidecar when shipping installers.
+                    let Ok(mut child) = Command::new(python())
+                        .args(["-m", "renpy_translate", "listen"])
+                        .current_dir(root())
+                        .stdout(Stdio::piped())
+                        .spawn()
+                    else {
+                        std::thread::sleep(Duration::from_secs(2));
+                        continue;
+                    };
+                    let stdout = child.stdout.take().unwrap();
+                    *handle.state::<Listener>().child.lock().unwrap() = Some(child);
+                    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                        if line.starts_with('{') {
+                            *handle.state::<CurrentText>().0.lock().unwrap() = Some(line.clone());
+                            let _ = handle.emit("text-event", line);
+                        }
                     }
+                    handle.state::<Listener>().child.lock().unwrap().take();
+                    std::thread::sleep(Duration::from_secs(1));
                 }
             });
-            app.manage(Listener(Mutex::new(Some(child))));
 
             position_overlay(app.handle(), None);
             let select: Shortcut = "CmdOrCtrl+Shift+Space".parse()?;
             let sentence: Shortcut = "CmdOrCtrl+Shift+Enter".parse()?;
-            let select_id = select.id();
-            let sentence_id = sentence.id();
+            app.manage(Shortcuts(Mutex::new((select, sentence))));
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_shortcuts([select, sentence])?
@@ -331,14 +521,44 @@ fn main() {
                         if state != ShortcutState::Pressed {
                             return;
                         }
-                        if shortcut.id() == select_id {
+                        let state = app.state::<Shortcuts>();
+                        let shortcuts = state.0.lock().unwrap();
+                        if shortcut.id() == shortcuts.0.id() {
                             show_overlay(app, "select", true);
-                        } else if shortcut.id() == sentence_id {
+                        } else if shortcut.id() == shortcuts.1.id() {
                             show_overlay(app, "sentence", false);
                         }
                     })
                     .build(),
             )?;
+            let menu = MenuBuilder::new(app)
+                .text("show", "显示主窗口")
+                .text("select", "选词翻译")
+                .text("sentence", "整句翻译")
+                .separator()
+                .text("quit", "退出")
+                .build()?;
+            let mut tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .tooltip("Ren'Py Translate")
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window
+                                .unminimize()
+                                .and_then(|_| window.show())
+                                .and_then(|_| window.set_focus());
+                        }
+                    }
+                    "select" => show_overlay(app, "select", true),
+                    "sentence" => show_overlay(app, "sentence", false),
+                    "quit" => app.exit(0),
+                    _ => {}
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.build(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -348,7 +568,13 @@ fn main() {
             set_provider_credentials,
             clear_provider_credentials,
             resize_overlay,
+            restore_overlay,
+            pick_directory,
+            set_shortcuts,
+            check_update,
+            open_release,
             translate_text,
+            cancel_translation,
             lookup_word,
             save_item,
             list_saved,
@@ -364,7 +590,11 @@ fn main() {
 
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
-            if let Some(mut child) = handle.state::<Listener>().0.lock().unwrap().take() {
+            handle
+                .state::<Listener>()
+                .stop
+                .store(true, Ordering::Relaxed);
+            if let Some(mut child) = handle.state::<Listener>().child.lock().unwrap().take() {
                 let _ = child.kill();
             }
         }

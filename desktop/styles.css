@@ -20,6 +20,9 @@ button:disabled { opacity: .45; cursor: wait; }
 .quiet { background: #303136; color: #eee; }
 .settings { margin: 4px 0 10px; }
 .settings #base-url { flex: 2; }
+.app-settings { margin-top: 12px; }
+.check { display: flex; align-items: center; gap: 7px; }
+.check input { width: auto; }
 .settings input:last-child { max-width: 100px; }
 .display-settings { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6px 12px; margin: 12px 0; }
 .display-settings label { display: flex; justify-content: space-between; gap: 12px; min-width: 190px; }
@@ -33,6 +36,7 @@ body.overlay { background: transparent; overflow: auto; }
 .overlay main { width: 100%; min-width: 500px; padding: 14px; }
 .overlay-panel { margin: 0; background: rgba(18, 19, 22, var(--overlay-opacity, .95)); box-shadow: 0 12px 34px #0008; }
 .overlay-panel header { margin: 0 0 8px; }
+.overlay-panel header [data-tauri-drag-region] { cursor: move; }
 .overlay-panel header button { padding: 4px 10px; }
 .overlay-source { margin: 8px 0 12px; font-size: 21px; user-select: text; }
 .overlay-result { min-height: 0; padding: 0 0 12px; color: #f4f1e8; font-size: 18px; white-space: pre-wrap; }

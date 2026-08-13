@@ -94,15 +94,52 @@ async function run(button, action) {
 $("install").onclick = () => run($("install"), async () => {
   $("hook-result").textContent = await invoke("install_hook", { path: $("game").value });
 });
+$("pick-game").onclick = async () => {
+  const path = await invoke("pick_directory");
+  if (path) $("game").value = path;
+};
 $("uninstall").onclick = () => run($("uninstall"), async () => {
   $("hook-result").textContent = await invoke("uninstall_hook", { path: $("game").value });
 });
 $("whole").onclick = () => { $("selected").value = current.text || ""; };
+let translationRun = 0;
 $("translate").onclick = () => run($("translate"), async () => {
-  $("translation").value = await invoke("translate_text", {
-    text: $("selected").value, provider: $("provider").value, baseUrl: $("base-url").value,
-    model: $("model").value, target: $("target").value
-  });
+  const runId = ++translationRun;
+  $("cancel-translation").hidden = false;
+  try {
+    const result = await invoke("translate_text", {
+      text: $("selected").value, provider: $("provider").value, baseUrl: $("base-url").value,
+      model: $("model").value, target: $("target").value
+    });
+    if (runId === translationRun) $("translation").value = result;
+  } catch (error) {
+    if (runId === translationRun) throw error;
+  } finally {
+    if (runId === translationRun) $("cancel-translation").hidden = true;
+  }
+});
+$("cancel-translation").onclick = async () => {
+  translationRun++; $("cancel-translation").hidden = true;
+  await invoke("cancel_translation");
+};
+
+$("save-shortcuts").onclick = () => run($("save-shortcuts"), async () => {
+  await invoke("set_shortcuts", { select: $("select-shortcut").value, sentence: $("sentence-shortcut").value });
+  localStorage.setItem("shortcuts", JSON.stringify({ select: $("select-shortcut").value, sentence: $("sentence-shortcut").value }));
+  $("app-status").textContent = "快捷键已更新";
+});
+try {
+  const shortcuts = JSON.parse(localStorage.getItem("shortcuts"));
+  if (shortcuts?.select && shortcuts?.sentence) {
+    $("select-shortcut").value = shortcuts.select;
+    $("sentence-shortcut").value = shortcuts.sentence;
+    invoke("set_shortcuts", shortcuts).catch((error) => { $("app-status").textContent = String(error); });
+  }
+} catch (_) {}
+$("check-update").onclick = () => run($("check-update"), async () => {
+  const result = JSON.parse(await invoke("check_update"));
+  $("app-status").textContent = result.message;
+  if (result.available && result.url && confirm(`${result.message}，打开下载页面？`)) await invoke("open_release", { url: result.url });
 });
 $("save").onclick = () => run($("save"), async () => {
   await invoke("save_item", {

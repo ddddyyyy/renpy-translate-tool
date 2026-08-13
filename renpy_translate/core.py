@@ -7,6 +7,7 @@ import socket
 import sqlite3
 import urllib.request
 import urllib.parse
+import urllib.error
 import uuid
 import time
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ MAX_PACKET = 65_507
 HOOK_NAME = "renpy_translate_hook.rpy"
 HOOK_PATH = Path(__file__).parent.parent / "renpy_hook" / HOOK_NAME
 DICTIONARY_DB = Path(__file__).parent.parent / "assets" / "ecdict.sqlite3"
+LATEST_RELEASE_URL = "https://api.github.com/repos/ddddyyyy/renpy-translate-tool/releases/latest"
 
 
 def parse_packet(data):
@@ -270,8 +272,19 @@ def translate(store, *, text, base_url, model, target_language,
         target_language, credential_id, secret
     )
     open_request = opener or urllib.request.urlopen
-    with open_request(http_request, timeout=60) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    for attempt in range(3):
+        try:
+            with open_request(http_request, timeout=60) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as error:
+            code = error.code
+            delay = error.headers.get("Retry-After")
+            error.close()
+            if code not in (429, 500, 502, 503, 504) or attempt == 2:
+                hint = "rate limited" if code == 429 else "service unavailable"
+                raise RuntimeError("translation {} (HTTP {})".format(hint, code)) from error
+            time.sleep(min(float(delay) if delay and delay.isdigit() else 2 ** attempt, 5))
     try:
         translated = html.unescape(extract(payload)).strip()
     except (KeyError, IndexError, TypeError, AttributeError) as error:
@@ -354,6 +367,31 @@ def _language(provider, language):
                 "zh-TW": "zh-CHT" if provider == "youdao" else "cht",
                 "en-US": "en", "en-GB": "en"}.get(language, language.split("-")[0])
     return language
+
+
+def update_status(current_version, url=LATEST_RELEASE_URL, opener=None):
+    request = urllib.request.Request(url, headers={"User-Agent": "renpy-translate-tool"})
+    try:
+        with (opener or urllib.request.urlopen)(request, timeout=15) as response:
+            release = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return {"available": False, "message": "尚无可下载的正式版本"}
+        raise
+    latest = release["tag_name"].lstrip("v")
+    return {
+        "available": _version(latest) > _version(current_version),
+        "version": latest,
+        "url": release["html_url"],
+        "message": "发现新版本 {}".format(latest) if _version(latest) > _version(current_version) else "当前已是最新版本",
+    }
+
+
+def _version(value):
+    try:
+        return tuple(int(part) for part in value.split("."))
+    except ValueError as error:
+        raise ValueError("invalid release version") from error
 
 
 def _now():

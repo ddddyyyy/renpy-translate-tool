@@ -25,7 +25,11 @@ each provider's credentials stay in the operating system credential vault.
 - `Esc`: close the interactive overlay and return input to the game.
 
 Drag any overlay edge or corner to resize it; the last size is restored on the
-next launch.
+next launch. Drag the overlay heading to move it; its monitor and position are
+restored when possible. The desktop settings also support configurable global
+shortcuts, a game-folder picker, tray controls, and GitHub
+Release update checks. Transient translation failures are retried twice and an
+in-flight request can be canceled.
 
 ## Install the hook
 
