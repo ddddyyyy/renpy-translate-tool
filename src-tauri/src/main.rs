@@ -241,8 +241,7 @@ fn restore_overlay(app: AppHandle, width: f64, height: f64, x: i32, y: i32) -> R
 
 #[tauri::command]
 async fn pick_directory(app: AppHandle) -> Result<Option<String>, String> {
-    Ok(app
-        .dialog()
+    app.dialog()
         .file()
         .blocking_pick_folder()
         .map(|path| {
@@ -250,7 +249,7 @@ async fn pick_directory(app: AppHandle) -> Result<Option<String>, String> {
                 .map(|path| path.to_string_lossy().into_owned())
         })
         .transpose()
-        .map_err(|error| error.to_string())?)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
