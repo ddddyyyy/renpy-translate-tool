@@ -1,4 +1,8 @@
 __pycache__/
 *.py[cod]
 *.rpyc
+.DS_Store
+.env
+.env.*
+!.env.example
 /src-tauri/target/
