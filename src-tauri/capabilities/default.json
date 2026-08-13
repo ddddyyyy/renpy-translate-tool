@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Desktop and overlay window permissions",
+  "windows": ["main", "overlay"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

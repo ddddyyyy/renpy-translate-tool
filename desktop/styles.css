@@ -35,8 +35,7 @@ output { display: block; min-height: 1.5em; padding-top: 6px; color: #aaa79f; }
 body.overlay { background: transparent; overflow: auto; }
 .overlay main { width: 100%; min-width: 500px; padding: 14px; }
 .overlay-panel { margin: 0; background: rgba(18, 19, 22, var(--overlay-opacity, .95)); box-shadow: 0 12px 34px #0008; }
-.overlay-panel header { margin: 0 0 8px; }
-.overlay-panel header [data-tauri-drag-region] { cursor: move; }
+.overlay-panel header { margin: 0 0 8px; cursor: move; }
 .overlay-panel header button { padding: 4px 10px; }
 .overlay-source { margin: 8px 0 12px; font-size: 21px; user-select: text; }
 .overlay-result { min-height: 0; padding: 0 0 12px; color: #f4f1e8; font-size: 18px; white-space: pre-wrap; }

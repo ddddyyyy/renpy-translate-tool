@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Desktop and overlay window permissions","local":true,"windows":["main","overlay"],"permissions":["core:default","core:window:allow-start-dragging"]}}

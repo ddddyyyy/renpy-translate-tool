@@ -32,6 +32,12 @@ overlayWindow.onMoved(({ payload }) => {
   }, 200);
 });
 
+document.querySelector(".overlay-panel header").addEventListener("mousedown", (event) => {
+  if (event.button === 0 && !event.target.closest("button")) {
+    overlayWindow.startDragging().catch(() => {});
+  }
+});
+
 function displaySettings() {
   let settings = {};
   try { settings = JSON.parse(localStorage.getItem("translation-settings")) || {}; }
